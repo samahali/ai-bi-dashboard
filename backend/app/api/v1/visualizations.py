@@ -1,7 +1,7 @@
 """
 Visualizations router.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
@@ -20,6 +20,15 @@ async def create_visualization(
     db: AsyncSession = Depends(get_db),
 ):
     return await VisualizationService(db).create(payload, current_user.id)
+
+
+@router.get("", response_model=list[VisualizationResponse])
+async def list_visualizations(
+    query_id: int = Query(..., description="List saved visualizations for this query."),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await VisualizationService(db).list_for_query(query_id, current_user.id)
 
 
 @router.get("/{viz_id}", response_model=VisualizationResponse)

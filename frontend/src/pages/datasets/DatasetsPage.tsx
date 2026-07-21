@@ -8,15 +8,7 @@ import Button from '@/components/ui/Button'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
 import Spinner from '@/components/ui/Spinner'
-import { formatBytes, formatNumber, timeAgo } from '@/utils/helpers'
-import type { DatasetStatus } from '@/types'
-
-const statusVariant: Record<DatasetStatus, 'success' | 'warning' | 'error' | 'neutral'> = {
-  ready:      'success',
-  processing: 'warning',
-  uploaded:   'neutral',
-  error:      'error',
-}
+import { formatBytes, formatNumber, timeAgo, statusVariant } from '@/utils/helpers'
 
 export default function DatasetsPage() {
   const [search, setSearch] = useState('')

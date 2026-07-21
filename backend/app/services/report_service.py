@@ -1,7 +1,6 @@
 """
 Report service — generates professional PDF reports from queries + visualizations.
 """
-import asyncio
 from pathlib import Path
 
 from sqlalchemy import case, select
@@ -9,9 +8,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import ForbiddenError, NotFoundError
-from app.db.models import Dataset, Insight, Query, Report, Visualization
+from app.db.models import Dataset, Insight, Query, Report
 from app.db.session import AsyncSessionLocal
 from app.schemas.report import ReportCreate, ReportResponse, ReportStatusResponse
+from app.utils.background_tasks import track
+from app.utils.ownership import get_owned
 
 
 class ReportService:
@@ -42,7 +43,7 @@ class ReportService:
         await self.db.commit()
         await self.db.refresh(report)
 
-        asyncio.create_task(self._generate_pdf(report.id, payload))
+        track(self._generate_pdf(report.id, payload))
 
         return ReportStatusResponse(
             id=report.id,
@@ -163,10 +164,6 @@ class ReportService:
                 await db.commit()
 
     async def _get_owned(self, report_id: int, user_id: int) -> Report:
-        result = await self.db.execute(select(Report).where(Report.id == report_id))
-        report = result.scalar_one_or_none()
-        if not report:
-            raise NotFoundError("Report not found.")
-        if report.user_id != user_id:
-            raise ForbiddenError()
-        return report
+        return await get_owned(
+            self.db, Report, report_id, user_id, not_found_msg="Report not found."
+        )

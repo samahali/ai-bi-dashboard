@@ -40,11 +40,11 @@ async def get_current_user(
         if payload.get("type") != "access":
             raise UnauthorizedError("Invalid token type.")
         user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
-        raise UnauthorizedError("Invalid or expired token.")
+    except (JWTError, KeyError, ValueError) as e:
+        raise UnauthorizedError("Invalid or expired token.") from e
 
     from sqlalchemy import select
-    result = await db.execute(select(User).where(User.id == user_id, User.is_active == True))
+    result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
     user = result.scalar_one_or_none()
 
     if user is None:

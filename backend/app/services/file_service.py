@@ -1,7 +1,6 @@
 """
 File upload service — validates, stores, and triggers async parsing.
 """
-import os
 import uuid
 from pathlib import Path
 
@@ -92,9 +91,8 @@ class FileService:
 
         # ── Trigger async parsing (fire-and-forget) ─────────────
         # Uses its own DB session since it outlives this request's session.
-        import asyncio
-        asyncio.create_task(
-            FileParser().parse_and_index(dataset.id, str(file_path), file_type)
-        )
+        # track() keeps a strong reference so the task can't be GC'd mid-run.
+        from app.utils.background_tasks import track
+        track(FileParser().parse_and_index(dataset.id, str(file_path), file_type))
 
         return DatasetResponse.model_validate(dataset)

@@ -58,7 +58,7 @@ class AuthService:
 
     async def login(self, payload: LoginRequest) -> AuthResponse:
         result = await self.db.execute(
-            select(User).where(User.username == payload.username, User.is_active == True)
+            select(User).where(User.username == payload.username, User.is_active.is_(True))
         )
         user = result.scalar_one_or_none()
 
@@ -87,11 +87,10 @@ class AuthService:
             if payload.get("type") != "refresh":
                 raise UnauthorizedError("Invalid token type.")
             user_id = int(payload["sub"])
-        except Exception:
-            raise UnauthorizedError("Invalid or expired refresh token.")
+        except Exception as e:
+            raise UnauthorizedError("Invalid or expired refresh token.") from e
 
         # Verify token is stored and not revoked
-        from app.core.auth import hash_password as _hash
         import hashlib
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 

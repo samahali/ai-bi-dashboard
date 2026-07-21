@@ -12,6 +12,14 @@ export default function DashboardPage() {
   const { data: datasets, isLoading: loadingDs } = useQuery({
     queryKey: ['datasets'],
     queryFn: () => datasetService.list({ limit: 5 }),
+    // A dataset processes asynchronously after upload (see file_service.py)
+    // — poll while any listed dataset is still processing so it flips to
+    // "ready" on its own instead of requiring a manual page refresh.
+    refetchInterval: (query) => {
+      const list = query.state.data
+      const stillProcessing = list?.data.some((d) => d.status === 'processing')
+      return stillProcessing ? 2000 : false
+    },
   })
   const { data: reports } = useQuery({
     queryKey: ['reports'],

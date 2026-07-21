@@ -3,7 +3,7 @@ JWT token creation and validation.
 """
 from datetime import datetime, timedelta, timezone
 
-from jose import JWTError, jwt
+from jose import jwt
 import bcrypt
 
 from app.config import settings

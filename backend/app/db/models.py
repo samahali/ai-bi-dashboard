@@ -3,10 +3,8 @@ SQLAlchemy ORM models.
 Each model maps directly to a PostgreSQL table.
 """
 from datetime import datetime
-from typing import Any
 
 from sqlalchemy import (
-    ARRAY,
     JSON,
     Boolean,
     DateTime,

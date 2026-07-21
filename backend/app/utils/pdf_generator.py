@@ -1,7 +1,6 @@
 """
 PDF report generator using ReportLab.
 """
-import os
 from pathlib import Path
 from typing import Any
 

@@ -5,7 +5,6 @@ import math
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import Dataset
 from app.schemas.dataset import (
     DatasetPreviewResponse,
@@ -15,6 +14,7 @@ from app.schemas.dataset import (
     PaginationMeta,
 )
 from app.utils.file_parser import FileParser
+from app.utils.ownership import get_owned
 
 
 class DatasetService:
@@ -85,12 +85,11 @@ class DatasetService:
         SchemaRAGStore().delete_dataset_schema(dataset_id)
 
     async def _get_owned(self, dataset_id: int, user_id: int) -> Dataset:
-        result = await self.db.execute(
-            select(Dataset).where(Dataset.id == dataset_id, Dataset.deleted_at.is_(None))
+        return await get_owned(
+            self.db,
+            Dataset,
+            dataset_id,
+            user_id,
+            extra_filters=(Dataset.deleted_at.is_(None),),
+            not_found_msg="Dataset not found.",
         )
-        dataset = result.scalar_one_or_none()
-        if not dataset:
-            raise NotFoundError("Dataset not found.")
-        if dataset.user_id != user_id:
-            raise ForbiddenError()
-        return dataset

@@ -8,7 +8,6 @@ through one `prompt | llm | StrOutputParser()` chain, so SQL generation
 itself is genuinely LangChain-orchestrated rather than a raw SDK call
 branching on provider at the call site.
 """
-import time
 from typing import Any
 
 import structlog
@@ -34,6 +33,10 @@ class BIAgent:
 
     def __init__(self, provider: str | None = None) -> None:
         self.provider = provider or settings.default_llm_provider
+        # Set True in _init_granite's except block if Granite init failed and
+        # we fell back to OpenAI. Used to compute a real confidence_score
+        # instead of a hardcoded constant — see process_question.
+        self.used_fallback = False
         self.llm = self._init_llm()
 
     def _init_llm(self):
@@ -72,6 +75,7 @@ class BIAgent:
                 ) from e
             logger.warning("Granite init failed, falling back to OpenAI", error=str(e))
             self.provider = "openai"
+            self.used_fallback = True
             return self._init_openai()
 
     def _init_openai(self):
@@ -130,10 +134,18 @@ class BIAgent:
         # 5. Suggest visualization type
         viz_suggestion = self._suggest_visualization(results)
 
+        # 6. Confidence score — a heuristic label for the UI, not a
+        # calibrated ML confidence. 1.0: SQL generated on the primary
+        # provider (no fallback) and executed without error (we only get
+        # here if executor.execute() above didn't raise). 0.75: generation
+        # succeeded but only after falling back from Granite to OpenAI —
+        # still executed cleanly, but on the secondary provider.
+        confidence_score = 0.75 if self.used_fallback else 1.0
+
         return {
             "sql": sql,
             "results": results[:500],     # Cap results for response size
-            "confidence_score": 0.90,
+            "confidence_score": confidence_score,
             "visualization_suggestion": viz_suggestion,
         }
 
@@ -188,21 +200,50 @@ class BIAgent:
             lines.append(f'  "{col}"  {col_type}{nullable}')
         return "\n".join(lines)
 
-    @staticmethod
-    def _suggest_visualization(results: list[dict]) -> str:
+    _DATE_LIKE_KEYWORDS = ("date", "month", "year", "time", "week", "day", "quarter")
+
+    @classmethod
+    def _is_date_like(cls, col_name: str) -> bool:
+        name = col_name.lower()
+        return any(kw in name for kw in cls._DATE_LIKE_KEYWORDS)
+
+    @classmethod
+    def _suggest_visualization(cls, results: list[dict]) -> str:
+        """
+        Single source of truth for chart-type suggestion — this result is
+        persisted on the Query row and the frontend renders it as-is rather
+        than re-deriving its own guess.
+
+        Cases handled, in order:
+        1. No rows                                        -> table
+        2. Exactly 1 dimension + 1 measure, dimension is
+           date-like                                      -> line
+        3. Exactly 1 dimension + 1 measure, few categories -> pie
+        4. Exactly 1 dimension + 1 measure, many categories-> bar
+        5. A date-like column + 2+ numeric measures        -> line
+           (multi-series trend over time — NOT a scatter: the x-axis is a
+           timeline, not a second independent numeric variable)
+        6. No date-like column + 2+ numeric measures        -> scatter
+           (true correlation between independent numeric variables)
+        7. Fallback                                         -> bar
+        """
         if not results:
             return "table"
         import pandas as pd
         df = pd.DataFrame(results)
         cols = list(df.columns)
         numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df[c])]
+        non_numeric_cols = [c for c in cols if c not in numeric_cols]
+        has_date_like = any(cls._is_date_like(c) for c in non_numeric_cols)
 
         if len(cols) == 2 and len(numeric_cols) == 1:
-            if any(kw in cols[0].lower() for kw in ["date", "month", "year", "time", "week"]):
+            if cls._is_date_like(cols[0]):
                 return "line"
             if len(df) <= 8:
                 return "pie"
             return "bar"
+
         if len(numeric_cols) >= 2:
-            return "scatter"
+            return "line" if has_date_like else "scatter"
+
         return "bar"

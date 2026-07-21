@@ -1,16 +1,18 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Send, ArrowLeft, BrainCircuit, Code2, Table2, BarChart2 } from 'lucide-react'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { Send, ArrowLeft, BrainCircuit, Code2, Table2, BarChart2, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { datasetService } from '@/services/datasetService'
 import { queryService } from '@/services/queryService'
+import { visualizationService } from '@/services/visualizationService'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
 import Spinner from '@/components/ui/Spinner'
 import Button from '@/components/ui/Button'
 import QueryChart from '@/components/charts/QueryChart'
-import { cn } from '@/utils/helpers'
+import DataTable from '@/components/ui/DataTable'
+import { cn, resolveChartType } from '@/utils/helpers'
 import type { Query } from '@/types'
 
 type ResultView = 'table' | 'chart' | 'sql'
@@ -61,6 +63,29 @@ export default function QueryPage() {
     } finally {
       setIsAsking(false)
     }
+  }
+
+  const saveChartMutation = useMutation({
+    mutationFn: visualizationService.create,
+    onSuccess: () => toast.success('Chart saved.'),
+    onError: () => toast.error('Failed to save chart.'),
+  })
+
+  const handleSaveChart = () => {
+    if (!activeQuery?.results?.length) return
+    const keys = Object.keys(activeQuery.results[0])
+    const chartType = resolveChartType(activeQuery.results, activeQuery.visualization_suggestion)
+    const xKey = keys[0]
+    const numericKeys = keys.filter((k) => typeof activeQuery.results![0][k] === 'number')
+    const yKey = chartType === 'scatter' ? numericKeys[1] : numericKeys[0]
+
+    saveChartMutation.mutate({
+      query_id: activeQuery.id,
+      chart_type: chartType,
+      title: activeQuery.question,
+      x_axis: chartType === 'scatter' ? numericKeys[0] : xKey,
+      y_axis: yKey,
+    })
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -149,36 +174,32 @@ export default function QueryPage() {
 
               {/* Table view */}
               {view === 'table' && activeQuery.results && (
-                <div className="overflow-x-auto">
-                  {activeQuery.results.length === 0 ? (
-                    <p className="text-sm text-muted py-4 text-center">No results returned.</p>
-                  ) : (
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-border">
-                          {Object.keys(activeQuery.results[0]).map((col) => (
-                            <th key={col} className="text-left text-muted pb-2 pr-4 font-medium whitespace-nowrap">{col}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {activeQuery.results.map((row, i) => (
-                          <tr key={i} className="hover:bg-surface">
-                            {Object.values(row).map((val, j) => (
-                              <td key={j} className="py-2 pr-4 text-[#1f2328]">{String(val ?? '—')}</td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                <div>
+                  <DataTable
+                    columns={activeQuery.results.length ? Object.keys(activeQuery.results[0]) : []}
+                    rows={activeQuery.results}
+                  />
                   <p className="text-xs text-muted mt-3">{activeQuery.row_count} rows returned</p>
                 </div>
               )}
 
               {/* Chart view */}
               {view === 'chart' && activeQuery.results && (
-                <QueryChart results={activeQuery.results} suggestion={activeQuery.visualization_suggestion} />
+                <div>
+                  <QueryChart results={activeQuery.results} suggestion={activeQuery.visualization_suggestion} />
+                  {activeQuery.results.length > 0 && (
+                    <div className="flex justify-end mt-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={saveChartMutation.isPending}
+                        onClick={handleSaveChart}
+                      >
+                        <Save size={12} /> Save chart
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* SQL view */}

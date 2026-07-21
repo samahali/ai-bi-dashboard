@@ -11,7 +11,6 @@ DuckDB is ideal here because:
 from typing import Any
 
 import duckdb
-import pandas as pd
 import structlog
 
 from app.utils.file_parser import FileParser

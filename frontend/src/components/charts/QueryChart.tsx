@@ -2,6 +2,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ScatterChart, Scatter,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
+import { resolveChartType } from '@/utils/helpers'
 
 const COLORS = ['#3b82d4', '#7c5cd8', '#16a34a', '#d97706', '#dc2626', '#0891b2']
 
@@ -23,8 +24,13 @@ export default function QueryChart({ results, suggestion }: Props) {
     return <p className="text-xs text-muted py-4 text-center">No numeric columns to plot.</p>
   }
 
-  // Scatter needs two independent numeric columns to plot against each other.
-  if (suggestion === 'scatter' && numericKeys.length >= 2) {
+  // The backend's visualization_suggestion is the sole source of truth for
+  // chart type when the data shape supports it; resolveChartType handles
+  // the fallback heuristic otherwise. Shared with QueryPage's "Save chart"
+  // action so the logic isn't duplicated.
+  const chartType = resolveChartType(results, suggestion)
+
+  if (chartType === 'scatter') {
     const [xNum, yNum] = numericKeys
     return (
       <ResponsiveContainer width="100%" height={280}>
@@ -40,11 +46,7 @@ export default function QueryChart({ results, suggestion }: Props) {
     )
   }
 
-  // Heuristic: if x-axis looks like a date/time → line chart, else bar
-  const isTimeSeries = /date|month|year|time|week|day/i.test(xKey)
-  const isSinglePair = keys.length === 2 && yKeys.length === 1 && results.length <= 8
-
-  if (isSinglePair) {
+  if (chartType === 'pie') {
     return (
       <ResponsiveContainer width="100%" height={280}>
         <PieChart>
@@ -58,7 +60,7 @@ export default function QueryChart({ results, suggestion }: Props) {
     )
   }
 
-  if (isTimeSeries) {
+  if (chartType === 'line') {
     return (
       <ResponsiveContainer width="100%" height={280}>
         <LineChart data={results}>

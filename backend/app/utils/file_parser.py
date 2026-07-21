@@ -2,8 +2,6 @@
 File parser utility — reads CSV / Excel / JSON files into pandas DataFrames,
 infers column metadata, and updates the Dataset record.
 """
-import json
-from pathlib import Path
 from typing import Any
 
 import pandas as pd

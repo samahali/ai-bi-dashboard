@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import Dataset, Insight
 from app.schemas.insight import InsightResponse
+from app.utils.ownership import get_owned
 
 
 class InsightService:
@@ -24,18 +24,18 @@ class InsightService:
         limit: int,
     ) -> list[InsightResponse]:
         # Verify dataset access
-        ds_result = await self.db.execute(
-            select(Dataset).where(Dataset.id == dataset_id, Dataset.deleted_at.is_(None))
+        await get_owned(
+            self.db,
+            Dataset,
+            dataset_id,
+            user_id,
+            extra_filters=(Dataset.deleted_at.is_(None),),
+            not_found_msg="Dataset not found.",
         )
-        dataset = ds_result.scalar_one_or_none()
-        if not dataset:
-            raise NotFoundError("Dataset not found.")
-        if dataset.user_id != user_id:
-            raise ForbiddenError()
 
         stmt = select(Insight).where(
             Insight.dataset_id == dataset_id,
-            Insight.is_dismissed == False,
+            Insight.is_dismissed.is_(False),
         )
         if insight_type:
             stmt = stmt.where(Insight.insight_type == insight_type)
@@ -47,12 +47,9 @@ class InsightService:
         return [InsightResponse.model_validate(i) for i in result.scalars().all()]
 
     async def dismiss(self, insight_id: int, user_id: int) -> InsightResponse:
-        result = await self.db.execute(select(Insight).where(Insight.id == insight_id))
-        insight = result.scalar_one_or_none()
-        if not insight:
-            raise NotFoundError("Insight not found.")
-        if insight.user_id != user_id:
-            raise ForbiddenError()
+        insight = await get_owned(
+            self.db, Insight, insight_id, user_id, not_found_msg="Insight not found."
+        )
 
         insight.is_dismissed = True
         insight.dismissed_at = datetime.now(timezone.utc)

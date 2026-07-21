@@ -6,12 +6,8 @@ import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
 import Spinner from '@/components/ui/Spinner'
-import { formatBytes, formatNumber, timeAgo } from '@/utils/helpers'
-import type { DatasetStatus } from '@/types'
-
-const statusVariant: Record<DatasetStatus, 'success' | 'warning' | 'error' | 'neutral'> = {
-  ready: 'success', processing: 'warning', uploaded: 'neutral', error: 'error',
-}
+import DataTable from '@/components/ui/DataTable'
+import { formatBytes, formatNumber, timeAgo, statusVariant } from '@/utils/helpers'
 
 export default function DatasetDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -20,6 +16,13 @@ export default function DatasetDetailPage() {
   const { data: ds, isLoading } = useQuery({
     queryKey: ['dataset', datasetId],
     queryFn: () => datasetService.get(datasetId),
+    // Poll while this dataset is still processing so it flips to "ready" on
+    // its own instead of requiring a manual page refresh (same pattern as
+    // ReportsPage's reports query).
+    refetchInterval: (query) => {
+      const dataset = query.state.data
+      return dataset?.status === 'processing' ? 2000 : false
+    },
   })
 
   const { data: preview } = useQuery({
@@ -96,28 +99,12 @@ export default function DatasetDetailPage() {
           <h3 className="text-sm font-semibold text-[#1f2328] mb-3">
             Preview <span className="text-muted font-normal text-xs">(first {preview.row_count} of {formatNumber(preview.total_rows)} rows)</span>
           </h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border">
-                  {preview.columns.map((col) => (
-                    <th key={col} className="text-left text-muted pb-2 pr-4 font-medium whitespace-nowrap">{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {preview.data.map((row, i) => (
-                  <tr key={i} className="hover:bg-surface">
-                    {row.map((cell, j) => (
-                      <td key={j} className="py-2 pr-4 text-[#1f2328] whitespace-nowrap">
-                        {String(cell ?? '—')}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={preview.columns}
+            rows={preview.data.map((row) =>
+              Object.fromEntries(preview.columns.map((col, j) => [col, row[j]]))
+            )}
+          />
         </Card>
       )}
     </div>

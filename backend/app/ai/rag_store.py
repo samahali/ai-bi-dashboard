@@ -19,6 +19,7 @@ transformers model download) — the column corpus is small, structured text
 reasonable fit and keeps the app free of a ~80MB first-query model
 download and any dependency on external model registries.
 """
+import contextlib
 import hashlib
 import math
 from collections import Counter
@@ -34,6 +35,24 @@ logger = structlog.get_logger(__name__)
 
 EMBEDDING_DIMENSIONS = 256
 TOP_K_COLUMNS = 15
+
+# Module-level singleton ChromaDB client — mirrors the engine/AsyncSessionLocal
+# pattern in db/session.py. Each of SchemaRAGStore's 3 call sites (agent.py,
+# file_parser.py, dataset_service.py) constructs a fresh `SchemaRAGStore()`
+# per call, but they all share this one HttpClient/connection instead of each
+# opening its own, since chromadb.HttpClient is safe to share across callers
+# within a process.
+_client: chromadb.ClientAPI | None = None
+
+
+def _get_shared_client() -> chromadb.ClientAPI:
+    global _client
+    if _client is None:
+        _client = chromadb.HttpClient(
+            host=settings.chromadb_host,
+            port=settings.chromadb_port,
+        )
+    return _client
 
 
 class HashingEmbeddingFunction(EmbeddingFunction):
@@ -73,16 +92,10 @@ class SchemaRAGStore:
     """Embeds and retrieves dataset column context via ChromaDB."""
 
     def __init__(self) -> None:
-        self._client: chromadb.ClientAPI | None = None
         self._embedding_fn = HashingEmbeddingFunction()
 
     def _get_client(self) -> chromadb.ClientAPI:
-        if self._client is None:
-            self._client = chromadb.HttpClient(
-                host=settings.chromadb_host,
-                port=settings.chromadb_port,
-            )
-        return self._client
+        return _get_shared_client()
 
     @staticmethod
     def _collection_name(dataset_id: int) -> str:
@@ -102,10 +115,8 @@ class SchemaRAGStore:
             # Drop and recreate so re-parsing a dataset never leaves stale
             # column documents behind (e.g. a column that got renamed/removed).
             name = self._collection_name(dataset_id)
-            try:
+            with contextlib.suppress(Exception):
                 client.delete_collection(name)
-            except Exception:
-                pass
             collection = client.create_collection(name, embedding_function=self._embedding_fn)
 
             ids, documents, metadatas = [], [], []

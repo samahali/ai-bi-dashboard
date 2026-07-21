@@ -61,8 +61,10 @@ SCHEMA:
 RULES (follow strictly):
 1. Use ONLY columns that exist in the schema above.
 2. Use DuckDB-compatible SQL syntax.
-3. Always include ORDER BY for meaningful ordering.
-4. Use LIMIT 500 if no specific limit is mentioned.
+3. Include ORDER BY only when it improves result readability.
+4. Apply LIMIT only to row-returning result sets. If the query returns multiple rows and the user 
+does not specify a limit, append LIMIT 500. Do not use LIMIT for single-row 
+aggregate queries unless the user explicitly requests it.
 5. Use aggregate functions (SUM, AVG, COUNT, MAX, MIN) when appropriate.
 6. Use GROUP BY when aggregating.
 7. Do NOT use DROP, DELETE, UPDATE, INSERT, CREATE, ALTER, or TRUNCATE.

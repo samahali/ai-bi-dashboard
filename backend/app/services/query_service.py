@@ -1,7 +1,6 @@
 """
 Query service — orchestrates the Text-to-SQL AI flow.
 """
-import asyncio
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -11,6 +10,8 @@ from app.core.exceptions import DatasetNotReadyError, ForbiddenError, NotFoundEr
 from app.db.models import Dataset, Query
 from app.db.session import AsyncSessionLocal
 from app.schemas.query import QueryCreate, QueryResponse, QueryStatusResponse
+from app.utils.background_tasks import track
+from app.utils.ownership import get_owned
 
 
 class QueryService:
@@ -42,7 +43,7 @@ class QueryService:
         await self.db.refresh(query)
 
         # Fire-and-forget: run AI agent in background
-        asyncio.create_task(self._execute_query(query.id, dataset, payload))
+        track(self._execute_query(query.id, dataset, payload))
 
         return QueryStatusResponse(
             id=query.id,
@@ -110,10 +111,4 @@ class QueryService:
                 await db.commit()
 
     async def _get_owned(self, query_id: int, user_id: int) -> Query:
-        result = await self.db.execute(select(Query).where(Query.id == query_id))
-        query = result.scalar_one_or_none()
-        if not query:
-            raise NotFoundError("Query not found.")
-        if query.user_id != user_id:
-            raise ForbiddenError()
-        return query
+        return await get_owned(self.db, Query, query_id, user_id, not_found_msg="Query not found.")

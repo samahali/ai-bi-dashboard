@@ -14,6 +14,11 @@ export const visualizationService = {
     return data
   },
 
+  async list(queryId: number): Promise<Visualization[]> {
+    const { data } = await api.get<Visualization[]>('/visualizations', { params: { query_id: queryId } })
+    return data
+  },
+
   async update(
     id: number,
     payload: { title?: string; config?: Record<string, unknown>; is_saved?: boolean }
