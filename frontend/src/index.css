@@ -1,0 +1,8 @@
+/* Entry point — only three things belong here:
+   1. Tailwind itself
+   2. Design tokens (theme.css)
+   3. Browser resets (base.css)
+   Everything else is a React component. */
+@import "tailwindcss";
+@import "./styles/theme.css";
+@import "./styles/base.css";

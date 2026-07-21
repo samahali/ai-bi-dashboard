@@ -1,0 +1,205 @@
+services:
+  # ──────────────────────────────────────────
+  # PostgreSQL Database
+  # ──────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: bi_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bidashboard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bidashboard_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-bi_dashboard}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bidashboard} -d ${POSTGRES_DB:-bi_dashboard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - bi_network
+
+  # ──────────────────────────────────────────
+  # ChromaDB Vector Store
+  # ──────────────────────────────────────────
+  chromadb:
+    # Pinned: the chromadb Python client library (backend/requirements.txt)
+    # must match the server's API version. `latest` (1.x) ships a v2-only
+    # collection response schema that older/mismatched client versions
+    # can't parse (KeyError: '_type' on create_collection) — verified
+    # against chromadb==0.6.3 client. Bump both together deliberately.
+    image: chromadb/chroma:0.5.23
+    container_name: bi_chromadb
+    restart: unless-stopped
+    volumes:
+      - chromadb_data:/chroma/chroma
+    ports:
+      - "8001:8000"
+    environment:
+      CHROMA_SERVER_AUTH_PROVIDER: ""
+      ALLOW_RESET: "true"
+      ANONYMIZED_TELEMETRY: "false"
+    networks:
+      - bi_network
+
+  # ──────────────────────────────────────────
+  # FastAPI Backend
+  # ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: bi_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-bidashboard}:${POSTGRES_PASSWORD:-bidashboard_secret}@postgres:5432/${POSTGRES_DB:-bi_dashboard}
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - ./backend:/app
+      - uploads_data:/app/storage/uploads
+      - reports_data:/app/storage/reports
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - bi_network
+
+  # ──────────────────────────────────────────
+  # React Frontend (dev with hot reload)
+  # ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: bi_frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:5173"
+    depends_on:
+      - backend
+    networks:
+      - bi_network
+
+  # ──────────────────────────────────────────
+  # FastAPI Backend (production build — runs Alembic migrations on start,
+  # no --reload, no dev/test dependencies). Only started under the
+  # `production` profile; the plain `backend` service above remains the
+  # default for `docker compose up`.
+  # ──────────────────────────────────────────
+  backend-prod:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: bi_backend_prod
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-bidashboard}:${POSTGRES_PASSWORD:-bidashboard_secret}@postgres:5432/${POSTGRES_DB:-bi_dashboard}
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - uploads_data:/app/storage/uploads
+      - reports_data:/app/storage/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - bi_network
+    profiles:
+      - production
+
+  # ──────────────────────────────────────────
+  # React Frontend (production build — static Nginx-served assets, no
+  # dev server). Only started under the `production` profile.
+  # ──────────────────────────────────────────
+  frontend-prod:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: production
+    container_name: bi_frontend_prod
+    restart: unless-stopped
+    networks:
+      - bi_network
+    profiles:
+      - production
+
+  # ──────────────────────────────────────────
+  # Nginx Reverse Proxy (production-like routing)
+  # ──────────────────────────────────────────
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: bi_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-prod
+      - frontend-prod
+    networks:
+      - bi_network
+    profiles:
+      - production
+
+# ──────────────────────────────────────────
+# Named Volumes
+# ──────────────────────────────────────────
+volumes:
+  postgres_data:
+    name: bi_postgres_data
+  chromadb_data:
+    name: bi_chromadb_data
+  uploads_data:
+    name: bi_uploads_data
+  reports_data:
+    name: bi_reports_data
+
+# ──────────────────────────────────────────
+# Networks
+# ──────────────────────────────────────────
+networks:
+  bi_network:
+    name: bi_dashboard_network
+    driver: bridge

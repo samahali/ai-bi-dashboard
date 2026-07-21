@@ -1,0 +1,44 @@
+/*
+ * Browser resets and element defaults ONLY.
+ * No component styles here — those live in React components.
+ */
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: #ffffff;
+    color: #1f2328;
+    font-family: var(--font-family-sans);
+    font-size: 0.9375rem; /* 15px */
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Inherit font in all form controls */
+  input, textarea, select, button {
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+  }
+
+  /* Remove list decoration when lists are used as UI navigation */
+  ul[role="list"], ol[role="list"] {
+    list-style: none;
+  }
+
+  /* Thin, consistent scrollbar */
+  ::-webkit-scrollbar          { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track    { background: #f7f8fa; }
+  ::-webkit-scrollbar-thumb    { background: #e5e7eb; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #57606a; }
+}

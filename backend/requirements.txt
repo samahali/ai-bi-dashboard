@@ -1,0 +1,77 @@
+# ==============================================================================
+# Core Framework
+# ==============================================================================
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9      # File upload support
+
+# ==============================================================================
+# Database
+# ==============================================================================
+sqlalchemy==2.0.30
+alembic==1.13.1
+psycopg2-binary==2.9.9
+asyncpg==0.29.0               # Async PostgreSQL driver
+
+# ==============================================================================
+# Authentication
+# ==============================================================================
+python-jose[cryptography]==3.3.0
+# passlib was listed here but never imported — app/core/auth.py calls the
+# bcrypt package directly. Dropped rather than kept as dead weight.
+bcrypt>=4.0.0
+
+# ==============================================================================
+# AI & LangChain
+# ==============================================================================
+# langchain 0.2.1/langchain-openai 0.1.8 (previous pins) import pydantic's v1
+# compat shim, which crashes on Python 3.12 (TypeError: ForwardRef._evaluate()
+# missing 'recursive_guard') — verified broken, never actually importable.
+# 0.3.x drops that shim. Bumped together with pydantic/pydantic-settings/
+# openai since langchain 0.3.x requires newer floors of each — verified this
+# whole set resolves and imports cleanly via `pip install --dry-run`.
+langchain==0.3.7
+langchain-community==0.3.7
+langchain-openai==0.2.9
+openai>=1.54,<2
+ibm-watsonx-ai==1.5.1
+chromadb==0.6.3
+
+# ==============================================================================
+# Data Processing
+# ==============================================================================
+pandas==2.2.2
+openpyxl==3.1.2              # Excel support
+numpy==1.26.4
+
+# ==============================================================================
+# SQL Execution
+# ==============================================================================
+duckdb==0.10.3               # In-process SQL engine for file queries
+aiofiles==23.2.1             # Async file I/O
+
+# ==============================================================================
+# PDF Generation
+# ==============================================================================
+reportlab==4.2.0
+
+# ==============================================================================
+# Validation & Settings
+# ==============================================================================
+pydantic>=2.9,<3       # floor raised by langchain 0.3.x
+pydantic-settings>=2.4,<3
+email-validator==2.1.1
+sqlparse==0.5.0              # SQL validation
+
+# ==============================================================================
+# HTTP & Utilities
+# ==============================================================================
+httpx==0.27.0
+python-dotenv==1.0.1
+tenacity==8.3.0              # Retry logic
+slowapi==0.1.9               # Rate limiting
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+structlog==24.1.0

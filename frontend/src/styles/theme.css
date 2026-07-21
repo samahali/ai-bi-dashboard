@@ -1,0 +1,35 @@
+/*
+ * Design tokens — the ONLY custom CSS you need with Tailwind v4.
+ *
+ * These @theme variables become Tailwind utility classes automatically:
+ *   --color-accent  →  bg-accent, text-accent, border-accent
+ *   --color-surface →  bg-surface
+ *   --radius-lg     →  rounded-lg  (extends Tailwind's default scale)
+ *   etc.
+ *
+ * Everything visual beyond this lives in React components as Tailwind utilities.
+ */
+@theme {
+  /* ── Brand colours ────────────────────────────────────────── */
+  --color-accent:    #3b82d4;   /* Primary — buttons, links, focus rings */
+  --color-surface:   #f7f8fa;   /* Subtle bg — sidebar, table rows       */
+  --color-border:    #e5e7eb;   /* All borders                           */
+  --color-muted:     #57606a;   /* Hint / secondary text                 */
+  --color-secondary: #7c5cd8;   /* Purple — used sparingly               */
+
+  /* ── Severity (Insight badges) ────────────────────────────── */
+  --color-severity-low:      #16a34a;
+  --color-severity-medium:   #d97706;
+  --color-severity-high:     #dc2626;
+  --color-severity-critical: #7c3aed;
+
+  /* ── Typography ───────────────────────────────────────────── */
+  --font-family-sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-family-mono: "JetBrains Mono", "Fira Code", monospace;
+
+  /* ── Spacing extras ───────────────────────────────────────── */
+  --spacing-sidebar: 16rem;   /* w-sidebar */
+
+  /* ── Shadows ──────────────────────────────────────────────── */
+  --shadow-card: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.05);
+}

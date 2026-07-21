@@ -1,0 +1,132 @@
+"""
+File parser utility — reads CSV / Excel / JSON files into pandas DataFrames,
+infers column metadata, and updates the Dataset record.
+"""
+import json
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import Dataset, Insight
+from app.db.session import AsyncSessionLocal
+from app.utils.insight_generator import InsightGenerator
+
+logger = structlog.get_logger(__name__)
+
+# Max rows to store in columns_metadata as sample values
+SAMPLE_SIZE = 5
+
+
+class FileParser:
+    def __init__(self, db: AsyncSession | None = None) -> None:
+        # `db` is only used by get_dataframe() (called within an existing request session).
+        # parse_and_index() always opens its own session since it runs as a detached
+        # background task outside the request's session lifecycle.
+        self.db = db
+
+    async def parse_and_index(self, dataset_id: int, file_path: str, file_type: str) -> None:
+        """
+        Parse the file, infer column metadata, and update the Dataset status.
+        Called as a background task after upload — opens its own DB session
+        since the request session that spawned it may already be closed.
+        """
+        async with AsyncSessionLocal() as db:
+            try:
+                df = self._read_file(file_path, file_type)
+                columns_metadata = self._infer_metadata(df)
+
+                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                dataset = result.scalar_one_or_none()
+                if not dataset:
+                    logger.warning("Dataset not found during parsing", dataset_id=dataset_id)
+                    return
+
+                dataset.row_count = len(df)
+                dataset.column_count = len(df.columns)
+                dataset.columns_metadata = columns_metadata
+                dataset.status = "ready"
+
+                await db.commit()
+                logger.info("Dataset parsed successfully", dataset_id=dataset_id, rows=len(df))
+
+                await self._generate_insights(db, dataset_id, dataset.user_id, df)
+
+                from app.ai.rag_store import SchemaRAGStore
+                SchemaRAGStore().index_dataset_schema(dataset_id, columns_metadata)
+
+            except Exception as exc:
+                logger.error("Failed to parse dataset", dataset_id=dataset_id, error=str(exc))
+                await db.rollback()
+                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                dataset = result.scalar_one_or_none()
+                if dataset:
+                    dataset.status = "error"
+                    dataset.error_message = str(exc)
+                    await db.commit()
+
+    async def _generate_insights(
+        self, db: AsyncSession, dataset_id: int, user_id: int, df: pd.DataFrame
+    ) -> None:
+        """
+        Run statistical insight detection and persist results.
+        Failures here are logged but never fail the dataset itself — insights
+        are a bonus on top of a successfully-parsed dataset, not a requirement.
+        """
+        try:
+            insight_dicts = InsightGenerator().generate(df)
+            for data in insight_dicts:
+                db.add(Insight(dataset_id=dataset_id, user_id=user_id, **data))
+            if insight_dicts:
+                await db.commit()
+                logger.info(
+                    "Insights generated", dataset_id=dataset_id, count=len(insight_dicts)
+                )
+        except Exception as exc:
+            logger.error("Failed to generate insights", dataset_id=dataset_id, error=str(exc))
+            await db.rollback()
+
+    def _read_file(self, file_path: str, file_type: str) -> pd.DataFrame:
+        if file_type == "csv":
+            return pd.read_csv(file_path, low_memory=False)
+        elif file_type == "excel":
+            return pd.read_excel(file_path, engine="openpyxl")
+        elif file_type == "json":
+            return pd.read_json(file_path)
+        raise ValueError(f"Unsupported file type: {file_type}")
+
+    def _infer_metadata(self, df: pd.DataFrame) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        for col in df.columns:
+            series = df[col]
+            dtype = series.dtype
+            col_type = self._pandas_type_to_str(dtype)
+            samples = [
+                v for v in series.dropna().head(SAMPLE_SIZE).tolist()
+                if v is not None
+            ]
+            metadata[str(col)] = {
+                "type": col_type,
+                "nullable": bool(series.isna().any()),
+                "sample_values": samples,
+            }
+        return metadata
+
+    @staticmethod
+    def _pandas_type_to_str(dtype) -> str:
+        if pd.api.types.is_integer_dtype(dtype):
+            return "integer"
+        if pd.api.types.is_float_dtype(dtype):
+            return "float"
+        if pd.api.types.is_bool_dtype(dtype):
+            return "boolean"
+        if pd.api.types.is_datetime64_any_dtype(dtype):
+            return "datetime"
+        return "string"
+
+    def get_dataframe(self, file_path: str, file_type: str) -> pd.DataFrame:
+        """Public method for services that need to work with the raw DataFrame."""
+        return self._read_file(file_path, file_type)
