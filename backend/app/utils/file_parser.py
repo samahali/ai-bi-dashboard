@@ -1,6 +1,12 @@
 """
 File parser utility — reads CSV / Excel / JSON files into pandas DataFrames,
 infers column metadata, and updates the Dataset record.
+
+A CSV or JSON file is a single table. An Excel workbook may contain multiple
+sheets, each of which becomes its own table. To keep one code path for all
+file types, every reader returns an ordered ``{table_name: DataFrame}`` mapping
+(CSV/JSON yield exactly one entry named ``data``; Excel yields one entry per
+sheet, keyed by the sanitized sheet name).
 """
 from typing import Any
 
@@ -11,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Dataset, Insight
 from app.db.session import AsyncSessionLocal
+from app.utils.identifiers import DEFAULT_TABLE_NAME, sanitize_table_names
 from app.utils.insight_generator import InsightGenerator
 
 logger = structlog.get_logger(__name__)
@@ -34,8 +41,16 @@ class FileParser:
         """
         async with AsyncSessionLocal() as db:
             try:
-                df = self._read_file(file_path, file_type)
-                columns_metadata = self._infer_metadata(df)
+                # Read every table once; build metadata from the same frames
+                # (no second read of the file).
+                named = self._read_named_frames(file_path, file_type)
+                tables_metadata = self._build_tables_metadata(named)
+
+                # The primary (first) table stays in columns_metadata / row_count /
+                # column_count so existing single-table consumers (frontend,
+                # preview, pre-multi-table code paths) keep working unchanged.
+                primary_name = next(iter(named))
+                primary_df = named[primary_name][1]
 
                 result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
                 dataset = result.scalar_one_or_none()
@@ -43,18 +58,24 @@ class FileParser:
                     logger.warning("Dataset not found during parsing", dataset_id=dataset_id)
                     return
 
-                dataset.row_count = len(df)
-                dataset.column_count = len(df.columns)
-                dataset.columns_metadata = columns_metadata
+                dataset.row_count = len(primary_df)
+                dataset.column_count = len(primary_df.columns)
+                dataset.columns_metadata = tables_metadata[primary_name]["columns"]
+                dataset.tables_metadata = tables_metadata
                 dataset.status = "ready"
 
                 await db.commit()
-                logger.info("Dataset parsed successfully", dataset_id=dataset_id, rows=len(df))
+                logger.info(
+                    "Dataset parsed successfully",
+                    dataset_id=dataset_id,
+                    tables=len(named),
+                    rows=len(primary_df),
+                )
 
-                await self._generate_insights(db, dataset_id, dataset.user_id, df)
+                await self._generate_insights(db, dataset_id, dataset.user_id, primary_df)
 
                 from app.ai.rag_store import SchemaRAGStore
-                SchemaRAGStore().index_dataset_schema(dataset_id, columns_metadata)
+                SchemaRAGStore().index_dataset_schema(dataset_id, dataset.columns_metadata)
 
             except Exception as exc:
                 logger.error("Failed to parse dataset", dataset_id=dataset_id, error=str(exc))
@@ -88,6 +109,11 @@ class FileParser:
             await db.rollback()
 
     def _read_file(self, file_path: str, file_type: str) -> pd.DataFrame:
+        """Read the primary (single, or first-sheet) table as one DataFrame.
+
+        Kept for the preview path and any single-table consumer. Multi-table
+        code paths use `get_dataframes` / `_read_named_frames` instead.
+        """
         if file_type == "csv":
             return pd.read_csv(file_path, low_memory=False)
         elif file_type == "excel":
@@ -95,6 +121,59 @@ class FileParser:
         elif file_type == "json":
             return pd.read_json(file_path)
         raise ValueError(f"Unsupported file type: {file_type}")
+
+    def get_dataframes(self, file_path: str, file_type: str) -> dict[str, pd.DataFrame]:
+        """
+        Public: read every table into an ordered ``{table_name: DataFrame}``
+        mapping keyed by sanitized SQL-safe table name. Used by the SQL
+        executor to register all tables in DuckDB. CSV/JSON → single entry
+        ``data``; Excel → one entry per sheet.
+        """
+        return {name: df for name, (_orig, df) in self._read_named_frames(file_path, file_type).items()}
+
+    def _read_named_frames(
+        self, file_path: str, file_type: str
+    ) -> dict[str, tuple[str, pd.DataFrame]]:
+        """
+        Read all tables, each value ``(original_name, DataFrame)`` so the
+        original (pre-sanitization) sheet name is retained for display. Keyed
+        by sanitized table name; insertion order = sheet order.
+        """
+        if file_type == "csv":
+            return {DEFAULT_TABLE_NAME: (DEFAULT_TABLE_NAME, pd.read_csv(file_path, low_memory=False))}
+        if file_type == "json":
+            return {DEFAULT_TABLE_NAME: (DEFAULT_TABLE_NAME, pd.read_json(file_path))}
+        if file_type == "excel":
+            # sheet_name=None → ordered dict {original_sheet_name: DataFrame}.
+            sheets: dict[str, pd.DataFrame] = pd.read_excel(
+                file_path, engine="openpyxl", sheet_name=None
+            )
+            if not sheets:
+                raise ValueError("Excel workbook contains no sheets.")
+            name_map = sanitize_table_names(list(sheets.keys()))
+            return {name_map[orig]: (orig, df) for orig, df in sheets.items()}
+        raise ValueError(f"Unsupported file type: {file_type}")
+
+    def _build_tables_metadata(
+        self, named: dict[str, tuple[str, pd.DataFrame]]
+    ) -> dict[str, Any]:
+        """
+        Build the per-table metadata blob stored on `Dataset.tables_metadata`
+        from already-read frames (no file I/O here):
+        ``{table_name: {original_name, row_count, column_count, columns, sheet_index}}``.
+        `columns` reuses the exact shape produced by `_infer_metadata`, so the
+        primary table's `columns` is drop-in compatible with `columns_metadata`.
+        """
+        tables: dict[str, Any] = {}
+        for index, (name, (original_name, df)) in enumerate(named.items()):
+            tables[name] = {
+                "original_name": original_name,
+                "row_count": len(df),
+                "column_count": len(df.columns),
+                "sheet_index": index,
+                "columns": self._infer_metadata(df),
+            }
+        return tables
 
     def _infer_metadata(self, df: pd.DataFrame) -> dict[str, Any]:
         metadata: dict[str, Any] = {}

@@ -61,7 +61,7 @@ reportlab==4.2.0
 pydantic>=2.9,<3       # floor raised by langchain 0.3.x
 pydantic-settings>=2.4,<3
 email-validator==2.1.1
-sqlparse==0.5.0              # SQL validation
+sqlglot==25.6.1             # SQL AST validation (SELECT-only + known-table checks)
 
 # ==============================================================================
 # HTTP & Utilities

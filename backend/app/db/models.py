@@ -68,9 +68,15 @@ class Dataset(Base):
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)   # csv | excel | json
     file_size: Mapped[int | None] = mapped_column(Integer)               # bytes
-    row_count: Mapped[int | None] = mapped_column(Integer)
-    column_count: Mapped[int | None] = mapped_column(Integer)
-    columns_metadata: Mapped[dict | None] = mapped_column(JSON)          # {col: {type, nullable, samples}}
+    row_count: Mapped[int | None] = mapped_column(Integer)               # primary table
+    column_count: Mapped[int | None] = mapped_column(Integer)            # primary table
+    columns_metadata: Mapped[dict | None] = mapped_column(JSON)          # primary table: {col: {type, nullable, samples}}
+    # Multi-table (Excel multi-sheet): per-table metadata keyed by sanitized
+    # table name. NULL for datasets parsed before this feature — treated as a
+    # single table synthesized from columns_metadata + file_type (see
+    # dataset_tables() helper). CSV/JSON always have exactly one entry ("data").
+    tables_metadata: Mapped[dict | None] = mapped_column(JSON)           # {table: {original_name, row_count, column_count, columns, sheet_index}}
+    table_relationships: Mapped[list | None] = mapped_column(JSON)       # [{from_table, to_table, column, confidence}]
     is_public: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="uploaded", nullable=False)  # uploaded|processing|ready|error
     error_message: Mapped[str | None] = mapped_column(Text)

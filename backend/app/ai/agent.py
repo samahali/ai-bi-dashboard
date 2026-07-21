@@ -107,29 +107,42 @@ class BIAgent:
         if not is_valid:
             raise PromptInjectionError(reason)
 
-        # 2. Build schema context — RAG: retrieve only the columns relevant
-        # to this question instead of always dumping the full schema. Falls
-        # back to the full schema if ChromaDB is unavailable or the dataset
-        # is small enough that retrieval wouldn't narrow anything down.
+        # 2. Build the multi-table schema context. A dataset may contain
+        # several tables (Excel sheets). `effective_tables_metadata` returns a
+        # uniform {table: {columns: {...}}} view, synthesizing a single "data"
+        # table for CSV/JSON and pre-multi-table datasets. RAG column filtering
+        # is applied per table (Phase 1 makes retrieval itself table-aware; for
+        # now it uses the primary table's columns as before).
         from app.ai.rag_store import SchemaRAGStore
-        all_columns_metadata = dataset.columns_metadata or {}
+        from app.utils.dataset_tables import effective_tables_metadata
+
+        tables = effective_tables_metadata(dataset.tables_metadata, dataset.columns_metadata)
         relevant_columns = SchemaRAGStore().retrieve_relevant_columns(dataset.id, question)
-        if relevant_columns:
-            columns_metadata = {
-                col: meta for col, meta in all_columns_metadata.items() if col in relevant_columns
-            }
-        else:
-            columns_metadata = all_columns_metadata
-        schema_str = self._format_schema(columns_metadata)
+        tables_schema = self._format_tables_schema(tables, relevant_columns)
 
         # 3. Generate SQL
-        sql = await self._generate_sql(question, schema_str, dataset.name)
+        sql = await self._generate_sql(question, tables_schema)
         logger.info("SQL generated", dataset_id=dataset.id, sql=sql)
 
-        # 4. Execute SQL against dataset file
+        # 3a. NO_ANSWER: the model signals it can't answer from the available
+        # schema (rather than hallucinating a query). Surface it cleanly.
+        no_answer = self._parse_no_answer(sql)
+        if no_answer is not None:
+            return {
+                "sql": None,
+                "results": [],
+                "confidence_score": 0.0,
+                "visualization_suggestion": "table",
+                "no_answer": no_answer,
+            }
+
+        # 4. Execute SQL against the dataset's tables, scoped to the known
+        # table names so a hallucinated/injected table is rejected.
         from app.ai.sql_executor import DatasetSQLExecutor
         executor = DatasetSQLExecutor()
-        results = executor.execute(sql, dataset.file_path, dataset.file_type)
+        results = executor.execute(
+            sql, dataset.file_path, dataset.file_type, known_tables=list(tables.keys())
+        )
 
         # 5. Suggest visualization type
         viz_suggestion = self._suggest_visualization(results)
@@ -149,28 +162,23 @@ class BIAgent:
             "visualization_suggestion": viz_suggestion,
         }
 
-    async def _generate_sql(self, question: str, schema: str, table_name: str) -> str:
+    async def _generate_sql(self, question: str, tables_schema: str) -> str:
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import PromptTemplate
 
         from app.ai.prompts import build_text_to_sql_prompt
 
         # A single LangChain Runnable chain regardless of provider — the
-        # prompt template just passes through the already-built prompt
-        # string (build_text_to_sql_prompt does the actual templating so
-        # the RAG-filtered schema and few-shot examples stay identical to
-        # before), then the chosen LLM, then a plain string parser.
+        # prompt template just passes through the already-built prompt string
+        # (build_text_to_sql_prompt does the actual templating), then the
+        # chosen LLM, then a plain string parser.
         chain = (
             PromptTemplate.from_template("{prompt}")
             | self.llm
             | StrOutputParser()
         )
 
-        prompt = build_text_to_sql_prompt(
-            question=question,
-            schema=schema,
-            table_name=table_name,
-        )
+        prompt = build_text_to_sql_prompt(question=question, tables_schema=tables_schema)
         raw_sql = await chain.ainvoke({"prompt": prompt})
         return self._clean_sql(raw_sql)
 
@@ -183,12 +191,34 @@ class BIAgent:
                 sql = sql[len(fence):]
         if sql.endswith("```"):
             sql = sql[:-3]
+        sql = sql.strip()
+        # A NO_ANSWER sentinel is returned verbatim (no semicolon coercion) so
+        # the caller can detect it; see _parse_no_answer.
+        if sql.upper().startswith("-- NO_ANSWER"):
+            return sql
         # Ensure it ends with semicolon
-        sql = sql.strip().rstrip(";") + ";"
+        sql = sql.rstrip(";") + ";"
         return sql
 
     @staticmethod
-    def _format_schema(columns_metadata: dict) -> str:
+    def _parse_no_answer(sql: str) -> str | None:
+        """
+        Detect the model's NO_ANSWER sentinel (`-- NO_ANSWER: <reason>`),
+        returning the reason string, or None if the output is a real query.
+        """
+        stripped = sql.strip()
+        if stripped.upper().startswith("-- NO_ANSWER"):
+            reason = stripped.split(":", 1)[1].strip() if ":" in stripped else ""
+            return reason or "The question cannot be answered from this dataset."
+        return None
+
+    # How many sample values to show the LLM per column. Sample values help the
+    # model pick correct value literals (e.g. that status ∈ {'shipped','pending'})
+    # without bloating the prompt.
+    _PROMPT_SAMPLE_LIMIT = 3
+
+    @classmethod
+    def _format_schema(cls, columns_metadata: dict) -> str:
         lines = []
         for col, meta in columns_metadata.items():
             col_type = meta.get("type", "string").upper()
@@ -197,8 +227,51 @@ class BIAgent:
             # form everywhere it references them (SELECT, WHERE, GROUP BY, ...) —
             # column names with spaces/special chars otherwise get inconsistently
             # quoted (e.g. quoted in GROUP BY but bare in SELECT, breaking the parser).
-            lines.append(f'  "{col}"  {col_type}{nullable}')
+            samples = meta.get("sample_values") or []
+            sample_str = ""
+            if samples:
+                shown = ", ".join(str(s) for s in samples[: cls._PROMPT_SAMPLE_LIMIT])
+                sample_str = f"  -- e.g. {shown}"
+            lines.append(f'  "{col}"  {col_type}{nullable}{sample_str}')
         return "\n".join(lines)
+
+    @classmethod
+    def _format_tables_schema(
+        cls, tables: dict, relevant_columns: list[str] | None = None
+    ) -> str:
+        """
+        Render all tables for the prompt as::
+
+            -- Table: sales
+              "region"  STRING NOT NULL  -- e.g. US, EU
+              ...
+            -- Table: customers
+              ...
+
+        `relevant_columns` (RAG, Phase 1) is applied per table when present:
+        a table keeps only its retrieved columns, but a table with ANY retrieved
+        column keeps ALL its columns so join keys are never filtered away. When
+        None (RAG unavailable / small schema), every column of every table is
+        shown.
+        """
+        relevant = set(relevant_columns) if relevant_columns else None
+        blocks = []
+        for table_name, table_meta in tables.items():
+            columns = table_meta.get("columns", {})
+            # When RAG retrieved columns, keep a table only if at least one of
+            # its columns was retrieved (and then keep ALL its columns so join
+            # keys are never filtered away). Without retrieval, keep everything.
+            if relevant is not None and not any(col in relevant for col in columns):
+                continue
+            blocks.append(f"-- Table: {table_name}\n{cls._format_schema(columns)}")
+        # If per-table filtering removed everything (retrieval mismatch), fall
+        # back to showing all tables rather than an empty schema.
+        if not blocks:
+            blocks = [
+                f"-- Table: {name}\n{cls._format_schema(meta.get('columns', {}))}"
+                for name, meta in tables.items()
+            ]
+        return "\n\n".join(blocks)
 
     _DATE_LIKE_KEYWORDS = ("date", "month", "year", "time", "week", "day", "quarter")
 

@@ -99,7 +99,14 @@ class QueryService:
                 query.row_count = len(response.get("results") or [])
                 query.confidence_score = response.get("confidence_score")
                 query.visualization_suggestion = response.get("visualization_suggestion")
-                query.status = "success"
+                # NO_ANSWER: the model determined the question can't be answered
+                # from this dataset's schema. Not an execution error — a valid
+                # "no answer" outcome, surfaced via error_message for the UI.
+                if response.get("no_answer"):
+                    query.status = "success"
+                    query.error_message = response["no_answer"]
+                else:
+                    query.status = "success"
                 query.executed_at = datetime.now(timezone.utc)
 
             except Exception as exc:

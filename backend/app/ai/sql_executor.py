@@ -11,57 +11,58 @@ DuckDB is ideal here because:
 from typing import Any
 
 import duckdb
+import sqlglot
 import structlog
+from sqlglot import exp
 
 from app.utils.file_parser import FileParser
 
 logger = structlog.get_logger(__name__)
 
-# Read-only operations allowed. Word-boundary matched (see _validate_sql_safety)
-# so a legitimate column like "created_at" doesn't trip the "CREATE" rule.
-_DANGEROUS_KEYWORDS = frozenset(
-    ["DROP", "DELETE", "UPDATE", "INSERT", "CREATE", "ALTER", "TRUNCATE", "ATTACH"]
-)
-
-# DuckDB table/scalar functions that reach the filesystem or network. These are
-# blocked at the engine level by enable_external_access=false (see execute()),
-# but are also rejected here as an early, explicit first layer so a rejected
-# query fails fast with a clear reason rather than a generic engine error.
+# DuckDB table/scalar functions that reach the filesystem or network. Blocked
+# at the engine level by enable_external_access=false (see execute()), and also
+# rejected here as an early, explicit layer so a rejected query fails fast with
+# a clear reason. Kept as belt-and-suspenders alongside the sqlglot AST checks.
 _FILE_ACCESS_FUNCTIONS = frozenset(
     [
-        "READ_CSV", "READ_CSV_AUTO", "READ_PARQUET", "READ_JSON",
-        "READ_JSON_AUTO", "READ_NDJSON", "READ_TEXT", "READ_BLOB",
-        "GLOB", "SNIFF_CSV", "COPY", "INSTALL", "LOAD",
+        "read_csv", "read_csv_auto", "read_parquet", "read_json",
+        "read_json_auto", "read_ndjson", "read_text", "read_blob",
+        "glob", "sniff_csv", "copy", "install", "load",
     ]
 )
 
 
 class DatasetSQLExecutor:
-    """Executes SQL against an uploaded dataset file via DuckDB."""
+    """Executes SQL against an uploaded dataset's table(s) via DuckDB."""
 
-    def execute(self, sql: str, file_path: str, file_type: str) -> list[dict[str, Any]]:
+    def execute(
+        self,
+        sql: str,
+        file_path: str,
+        file_type: str,
+        known_tables: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """
-        Load the file into DuckDB as a virtual table and run the SQL.
-        Returns results as a list of row dicts.
+        Load every table in the file into DuckDB (each under its real sanitized
+        name) and run the SQL. `known_tables` (when provided) is the set of
+        table names the SQL is allowed to reference — the LLM was told exactly
+        these names, so anything else is a hallucination or injection and is
+        rejected before execution. Returns results as a list of row dicts.
         """
-        self._validate_sql_safety(sql)
-
-        # Load file into a pandas DataFrame first (handles xlsx)
+        # Read all tables first so validation can check against the real names.
         parser = FileParser(db=None)
-        df = parser.get_dataframe(file_path, file_type)
+        frames = parser.get_dataframes(file_path, file_type)
+        allowed = set(known_tables) if known_tables else set(frames.keys())
 
-        # Run SQL via DuckDB (uses the df as a virtual table named 'data').
-        #
-        # Hardened config — defense in depth against LLM-generated SQL that
-        # tries to reach outside the in-memory dataset. `enable_external_access`
-        # off disables DuckDB's file/URL-reading table functions (read_csv,
-        # read_parquet, read_json, httpfs, etc.), so even SQL like
-        # `SELECT * FROM read_csv('/app/.env')` that slips past the keyword
-        # denylist below is refused by the engine itself. `autoinstall/
-        # autoload_known_extensions` off prevents pulling in extensions (e.g.
-        # httpfs) that would re-open those capabilities. The registered
-        # DataFrame is loaded in-process before this connection exists, so it
-        # is unaffected by disabling external access.
+        self._validate_sql(sql, allowed)
+
+        # Hardened config — defense in depth. `enable_external_access=false`
+        # disables DuckDB's file/URL-reading table functions (read_csv,
+        # read_parquet, httpfs, …), so even SQL that slips past validation
+        # can't read local files. `autoinstall/autoload_known_extensions=false`
+        # prevents pulling in extensions that would re-open those capabilities.
+        # The DataFrames are loaded in-process before this connection exists,
+        # unaffected by disabling external access.
         conn = duckdb.connect(
             database=":memory:",
             config={
@@ -71,10 +72,11 @@ class DatasetSQLExecutor:
             },
         )
         try:
-            conn.register("data", df)
-            # Replace table name references — use 'data' as canonical table name
-            normalized_sql = self._normalize_table_name(sql)
-            result = conn.execute(normalized_sql).fetchdf()
+            # Register every table under its real name so JOINs across sheets
+            # work. No name rewriting — the LLM already knows these names.
+            for name, df in frames.items():
+                conn.register(name, df)
+            result = conn.execute(sql).fetchdf()
             return result.to_dict(orient="records")
         except duckdb.Error as e:
             logger.error("SQL execution failed", sql=sql, error=str(e))
@@ -83,45 +85,60 @@ class DatasetSQLExecutor:
             conn.close()
 
     @staticmethod
-    def _validate_sql_safety(sql: str) -> None:
-        import re
-
-        # Tokenize into SQL identifiers/keywords so matching is word-boundary
-        # aware — otherwise "created_at" trips CREATE and "updated" trips
-        # UPDATE. Uppercased for case-insensitive comparison.
-        tokens = {t.upper() for t in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", sql)}
-
-        blocked = tokens & (_DANGEROUS_KEYWORDS | _FILE_ACCESS_FUNCTIONS)
-        if blocked:
-            # Deterministic message regardless of set ordering.
-            raise ValueError(f"Disallowed SQL operation: {sorted(blocked)[0]}")
-
-        # Only a single statement is permitted — reject stacked queries even if
-        # each keyword individually looked benign (the trailing ';' DuckDB adds
-        # is fine; an interior ';' followed by more SQL is not).
-        if ";" in sql.strip().rstrip(";"):
-            raise ValueError("Multiple SQL statements are not allowed.")
-
-    @staticmethod
-    def _normalize_table_name(sql: str) -> str:
+    def _validate_sql(sql: str, allowed_tables: set[str]) -> None:
         """
-        Replace any FROM <name> references with FROM data so DuckDB resolves
-        the registered virtual table regardless of what the LLM named it.
-
-        Handles three identifier forms:
-        - Quoted (`Sales Data`, "Sales Data", [Sales Data]) — matched as a
-          single unit so an embedded space doesn't leave the rest dangling.
-        - Unquoted names with punctuation (e.g. a dataset named "traversal-test"
-          → `FROM traversal-test`) — a bare \\w+ match would stop at the hyphen
-          and rewrite to `FROM data-test`, which DuckDB then can't parse. The
-          unquoted branch consumes everything up to the next SQL delimiter
-          (whitespace, comma, semicolon, or parenthesis) so the whole table
-          reference is replaced.
+        Parser-based (sqlglot AST) validation — correctness over aggressiveness:
+        1. Exactly one statement, and it is a SELECT (or a CTE wrapping one).
+           Anything else (DROP/INSERT/PRAGMA/COPY/…) simply isn't a Select node.
+        2. Every referenced table is one of `allowed_tables` — catches
+           hallucinated tables and, as a bonus, file-reading table *functions*
+           (they parse as anonymous functions, not as known tables).
+        Column-level validation is intentionally NOT done here: aliases,
+        computed expressions, `*`, and CTE-derived columns make it prone to
+        false positives, and the engine surfaces a clear error for a genuinely
+        bad column anyway.
         """
-        import re
-        return re.sub(
-            r'\bFROM\s+(?:`[^`]+`|"[^"]+"|\[[^\]]+\]|[^\s,;()]+)',
-            "FROM data",
-            sql,
-            flags=re.IGNORECASE,
-        )
+        # Fast pre-filter: reject obvious file-access function names outright so
+        # the failure reason is explicit (defense in depth; engine also blocks).
+        lowered = sql.lower()
+        for fn in _FILE_ACCESS_FUNCTIONS:
+            if fn in lowered:
+                # word-boundary check to avoid matching inside a column name
+                import re
+                if re.search(rf"\b{re.escape(fn)}\s*\(", lowered):
+                    raise ValueError(f"Disallowed function: {fn}")
+
+        try:
+            statements = sqlglot.parse(sql, read="duckdb")
+        except Exception as e:
+            raise ValueError(f"Could not parse SQL: {e}") from e
+
+        real = [s for s in statements if s is not None]
+        if len(real) != 1:
+            raise ValueError("Exactly one SQL statement is allowed.")
+
+        stmt = real[0]
+        # Allowlist by root node type — safer and less version-fragile than
+        # enumerating every forbidden DDL/DML class. A read-only query's root is
+        # a SELECT, a set operation (UNION/INTERSECT/EXCEPT), or a WITH/CTE that
+        # wraps one of those. Anything else (Insert/Update/Delete/Drop/Create/
+        # Alter*/TruncateTable/Pragma/Set/Command/…) is rejected here.
+        allowed_roots = (exp.Select, exp.SetOperation, exp.Subquery)
+        root = stmt
+        if isinstance(root, exp.With):
+            root = root.this  # unwrap the CTE to its wrapped query
+        if not isinstance(root, allowed_roots):
+            raise ValueError("Only read-only SELECT statements are allowed.")
+
+        # Every referenced base table must be a known, registered table. CTE
+        # names defined in the same query are allowed (they're not base tables).
+        cte_names = {c.alias_or_name.lower() for c in stmt.find_all(exp.CTE)}
+        for table in stmt.find_all(exp.Table):
+            tname = (table.name or "").lower()
+            if not tname or tname in cte_names:
+                continue
+            if tname not in allowed_tables:
+                raise ValueError(
+                    f"Unknown table '{table.name}'. Allowed tables: "
+                    f"{', '.join(sorted(allowed_tables))}."
+                )
