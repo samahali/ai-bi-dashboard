@@ -36,6 +36,8 @@ class DatasetResponse(BaseModel):
     row_count: int | None
     column_count: int | None
     columns_metadata: dict[str, Any] | None
+    tables_metadata: dict[str, Any] | None = None       # multi-sheet Excel: per-table metadata
+    table_relationships: list[dict[str, Any]] | None = None  # detected likely joins
     is_public: bool
     status: str
     error_message: str | None

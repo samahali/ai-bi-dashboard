@@ -43,6 +43,8 @@ export interface Dataset {
   row_count: number | null
   column_count: number | null
   columns_metadata: Record<string, ColumnMeta> | null
+  tables_metadata?: Record<string, { original_name: string; row_count: number; column_count: number }> | null
+  table_relationships?: { from_table: string; to_table: string; column: string; to_column?: string; confidence: number }[] | null
   is_public: boolean
   status: DatasetStatus
   error_message: string | null

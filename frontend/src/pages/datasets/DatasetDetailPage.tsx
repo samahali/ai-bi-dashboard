@@ -76,6 +76,22 @@ export default function DatasetDetailPage() {
         ))}
       </div>
 
+      {/* Available Tables — only shown for multi-sheet Excel datasets (>1 table) */}
+      {ds.tables_metadata && Object.keys(ds.tables_metadata).length > 1 && (
+        <Card>
+          <h3 className="text-sm font-semibold text-[#1f2328] mb-3 flex items-center gap-2">
+            <Database size={14} className="text-muted" /> Available Tables
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(ds.tables_metadata).map(([name, meta]) => (
+              <Badge key={name} variant="success">
+                {meta.original_name || name} ({formatNumber(meta.row_count)} rows)
+              </Badge>
+            ))}
+          </div>
+        </Card>
+      )}
+
       {/* Column schema */}
       {ds.columns_metadata && (
         <Card>
