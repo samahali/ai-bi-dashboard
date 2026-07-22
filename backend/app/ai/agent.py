@@ -30,7 +30,7 @@ class BIAgent:
 
     Responsibilities:
     1. Validate user question (prompt injection prevention)
-    2. Build dataset context (schema + samples)
+    2. Build dataset context (schema only — no sample data values)
     3. Generate SQL via LLM
     4. Execute SQL against the dataset
     5. Return structured results with metadata
@@ -197,8 +197,8 @@ class BIAgent:
         template just passes through an already-built prompt string, then the
         chosen LLM, then a plain string parser. Shared by generation and repair.
         """
-        from langchain.output_parsers import StrOutputParser
-        from langchain.prompts import PromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.prompts import PromptTemplate
 
         return PromptTemplate.from_template("{prompt}") | self.llm | StrOutputParser()
 
@@ -297,13 +297,13 @@ class BIAgent:
             "no_answer": reason,
         }
 
-    # How many sample values to show the LLM per column. Sample values help the
-    # model pick correct value literals (e.g. that status ∈ {'shipped','pending'})
-    # without bloating the prompt.
-    _PROMPT_SAMPLE_LIMIT = 3
-
     @classmethod
     def _format_schema(cls, columns_metadata: dict) -> str:
+        # Sample values are intentionally NOT included here: this schema text
+        # is sent to an external LLM provider (OpenAI / Watsonx) for SQL
+        # generation, and real data values from the uploaded file must never
+        # leave the system in that request. Only column name/type/nullability
+        # (structural metadata, not data) is sent.
         lines = []
         for col, meta in columns_metadata.items():
             col_type = meta.get("type", "string").upper()
@@ -312,12 +312,7 @@ class BIAgent:
             # form everywhere it references them (SELECT, WHERE, GROUP BY, ...) —
             # column names with spaces/special chars otherwise get inconsistently
             # quoted (e.g. quoted in GROUP BY but bare in SELECT, breaking the parser).
-            samples = meta.get("sample_values") or []
-            sample_str = ""
-            if samples:
-                shown = ", ".join(str(s) for s in samples[: cls._PROMPT_SAMPLE_LIMIT])
-                sample_str = f"  -- e.g. {shown}"
-            lines.append(f'  "{col}"  {col_type}{nullable}{sample_str}')
+            lines.append(f'  "{col}"  {col_type}{nullable}')
         return "\n".join(lines)
 
     @classmethod

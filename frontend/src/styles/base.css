@@ -31,6 +31,16 @@
     line-height: inherit;
   }
 
+  /* Tailwind's preflight resets button cursor to default; restore the
+     pointer affordance for anything actually clickable. */
+  button:not(:disabled), [role="button"]:not([aria-disabled="true"]), a, select {
+    cursor: pointer;
+  }
+
+  button:disabled, [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
   /* Remove list decoration when lists are used as UI navigation */
   ul[role="list"], ol[role="list"] {
     list-style: none;

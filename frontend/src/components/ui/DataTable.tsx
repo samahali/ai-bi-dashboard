@@ -9,6 +9,7 @@ interface DataTableProps {
 }
 
 const ROW_HEIGHT = 33
+const HEADER_HEIGHT = 33
 const MAX_VIEWPORT_HEIGHT = 480
 
 /**
@@ -40,7 +41,8 @@ export default function DataTable({ columns, rows, emptyMessage = 'No results re
   }
 
   const gridTemplateColumns = `repeat(${columns.length}, minmax(120px, 1fr))`
-  const viewportHeight = Math.min(rows.length * ROW_HEIGHT, MAX_VIEWPORT_HEIGHT)
+  const bodyHeight = Math.min(rows.length * ROW_HEIGHT, MAX_VIEWPORT_HEIGHT - HEADER_HEIGHT)
+  const viewportHeight = bodyHeight + HEADER_HEIGHT
 
   return (
     <div ref={scrollRef} className="overflow-auto text-xs" style={{ height: viewportHeight }}>
