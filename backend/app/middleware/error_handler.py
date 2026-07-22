@@ -2,11 +2,12 @@
 Global exception handler — converts all AppErrors and unexpected exceptions
 into a consistent JSON response shape.
 """
+
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import AppError
-import structlog
 
 logger = structlog.get_logger(__name__)
 

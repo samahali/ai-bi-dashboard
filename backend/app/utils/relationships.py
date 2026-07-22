@@ -9,6 +9,7 @@ a *likely* relationship with a confidence score. Never guaranteed. The caller
 may use, not facts, and for explicitly forbidding invented joins when none are
 found.
 """
+
 import re
 from itertools import combinations
 from typing import Any
@@ -28,7 +29,7 @@ def normalize_column_name(name: str) -> str:
     camelCase, lowercase, strip separators.
     """
     s = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)  # camelCase -> camel_Case
-    s = re.sub(r"[\s\-]+", "_", s)                     # spaces/hyphens -> _
+    s = re.sub(r"[\s\-]+", "_", s)  # spaces/hyphens -> _
     s = re.sub(r"_+", "_", s).strip("_")
     return s.lower()
 
@@ -86,14 +87,16 @@ def detect_relationships(tables_metadata: dict[str, Any]) -> list[dict[str, Any]
             confidence = 0.9 if original_a == original_b else 0.7
             confidence = min(confidence + 0.05, 0.95)  # already id-like by construction
 
-            relationships.append({
-                "from_table": table_a,
-                "to_table": table_b,
-                "column": original_a,
-                "to_column": original_b,
-                "normalized": norm,
-                "confidence": round(confidence, 2),
-            })
+            relationships.append(
+                {
+                    "from_table": table_a,
+                    "to_table": table_b,
+                    "column": original_a,
+                    "to_column": original_b,
+                    "normalized": norm,
+                    "confidence": round(confidence, 2),
+                }
+            )
 
     # Highest-confidence first, for prompt rendering priority.
     relationships.sort(key=lambda r: r["confidence"], reverse=True)

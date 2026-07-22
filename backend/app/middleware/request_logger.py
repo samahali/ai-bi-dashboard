@@ -1,6 +1,7 @@
 """
 Structured request/response logging middleware.
 """
+
 import time
 
 import structlog

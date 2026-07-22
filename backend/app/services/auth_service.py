@@ -1,6 +1,7 @@
 """
 Auth service — register, login, logout, token refresh.
 """
+
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -16,7 +17,13 @@ from app.core.auth import (
 )
 from app.core.exceptions import ConflictError, UnauthorizedError
 from app.db.models import RefreshToken, User
-from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    AuthResponse,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 
 
 class AuthService:
@@ -41,7 +48,7 @@ class AuthService:
             last_name=payload.last_name,
         )
         self.db.add(user)
-        await self.db.flush()   # get user.id before commit
+        await self.db.flush()  # get user.id before commit
 
         access_token = create_access_token(user.id)
         refresh_token = create_refresh_token(user.id)
@@ -58,7 +65,9 @@ class AuthService:
 
     async def login(self, payload: LoginRequest) -> AuthResponse:
         result = await self.db.execute(
-            select(User).where(User.username == payload.username, User.is_active.is_(True))
+            select(User).where(
+                User.username == payload.username, User.is_active.is_(True)
+            )
         )
         user = result.scalar_one_or_none()
 
@@ -92,6 +101,7 @@ class AuthService:
 
         # Verify token is stored and not revoked
         import hashlib
+
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
         result = await self.db.execute(
@@ -125,7 +135,10 @@ class AuthService:
 
     async def _store_refresh_token(self, user_id: int, token: str) -> None:
         import hashlib
+
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        expires_at = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+        expires_at = datetime.now(timezone.utc) + timedelta(
+            days=settings.refresh_token_expire_days
+        )
         rt = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
         self.db.add(rt)

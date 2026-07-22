@@ -1,6 +1,7 @@
 """
 PDF report generator using ReportLab.
 """
+
 from pathlib import Path
 from typing import Any
 
@@ -110,7 +111,9 @@ class PDFGenerator:
                 code_style = ParagraphStyle(
                     "Code", parent=styles["Code"], fontSize=8, leading=12
                 )
-                story.append(Paragraph(f"<b>SQL:</b> {query.generated_sql}", code_style))
+                story.append(
+                    Paragraph(f"<b>SQL:</b> {query.generated_sql}", code_style)
+                )
                 story.append(Spacer(1, 2 * mm))
 
             if query.results:
@@ -141,14 +144,21 @@ class PDFGenerator:
 
     @staticmethod
     def _table_style() -> TableStyle:
-        return TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3b82d4")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f7f8fa")]),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
-            ("TOPPADDING", (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-            ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ])
+        return TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#3b82d4")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#f7f8fa")],
+                ),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ]
+        )

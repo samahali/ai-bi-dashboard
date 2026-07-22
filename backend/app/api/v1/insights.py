@@ -1,6 +1,7 @@
 """
 Insights router — AI-detected anomalies, trends, and recommendations.
 """
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 

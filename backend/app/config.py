@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import Literal
 import secrets
+from typing import Literal
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -40,8 +41,8 @@ class Settings(BaseSettings):
     # cookie from being sent on cross-site requests, which covers the common
     # CSRF vectors for this same-origin app. `cookie_domain` left None so the
     # browser scopes it to the serving host.
-    cookie_secure: bool = False          # overridden to True in production, see is_production
-    cookie_samesite: str = "lax"         # lax | strict | none
+    cookie_secure: bool = False  # overridden to True in production, see is_production
+    cookie_samesite: str = "lax"  # lax | strict | none
     cookie_domain: str | None = None
 
     # ──────────────────────────────────────────
@@ -52,7 +53,9 @@ class Settings(BaseSettings):
     # ──────────────────────────────────────────
     # Database
     # ──────────────────────────────────────────
-    database_url: str = "postgresql://bidashboard:bidashboard_secret@postgres:5432/bi_dashboard"
+    database_url: str = (
+        "postgresql://bidashboard:bidashboard_secret@postgres:5432/bi_dashboard"
+    )
 
     # ──────────────────────────────────────────
     # ChromaDB
@@ -103,11 +106,19 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins_list(self) -> list[str]:
-        return [origin.strip() for origin in self.allowed_origins.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def allowed_file_types_list(self) -> list[str]:
-        return [ft.strip().lower() for ft in self.allowed_file_types.split(",") if ft.strip()]
+        return [
+            ft.strip().lower()
+            for ft in self.allowed_file_types.split(",")
+            if ft.strip()
+        ]
 
 
 # Single global instance — import this everywhere

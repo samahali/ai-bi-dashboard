@@ -3,6 +3,7 @@ Application entry point.
 
 Wires together all routers, middleware, and startup/shutdown lifecycle events.
 """
+
 from contextlib import asynccontextmanager
 
 import structlog
@@ -12,7 +13,16 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.api.v1 import auth, datasets, files, health, insights, queries, reports, visualizations
+from app.api.v1 import (
+    auth,
+    datasets,
+    files,
+    health,
+    insights,
+    queries,
+    reports,
+    visualizations,
+)
 from app.config import settings
 from app.core.rate_limit import limiter
 from app.db.session import create_tables
@@ -98,7 +108,11 @@ def create_app() -> FastAPI:
     app.include_router(files.router, prefix=f"{prefix}/files", tags=["Files"])
     app.include_router(datasets.router, prefix=f"{prefix}/datasets", tags=["Datasets"])
     app.include_router(queries.router, prefix=f"{prefix}/queries", tags=["Queries"])
-    app.include_router(visualizations.router, prefix=f"{prefix}/visualizations", tags=["Visualizations"])
+    app.include_router(
+        visualizations.router,
+        prefix=f"{prefix}/visualizations",
+        tags=["Visualizations"],
+    )
     app.include_router(reports.router, prefix=f"{prefix}/reports", tags=["Reports"])
     app.include_router(insights.router, prefix=f"{prefix}/insights", tags=["Insights"])
 

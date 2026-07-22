@@ -8,6 +8,7 @@ places: the `tables_metadata` keys, the DuckDB `conn.register(name, df)` call,
 and the schema block shown to the LLM in the prompt. Keeping this in one helper
 guarantees they never drift apart.
 """
+
 import re
 
 # CSV/JSON files are conceptually a single table; this stable name preserves the

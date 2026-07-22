@@ -1,12 +1,16 @@
 """
 Visualization service.
 """
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
 from app.db.models import Query, Visualization
-from app.schemas.visualization import VisualizationCreate, VisualizationResponse, VisualizationUpdate
+from app.schemas.visualization import (
+    VisualizationCreate,
+    VisualizationResponse,
+    VisualizationUpdate,
+)
 from app.utils.ownership import get_owned
 
 
@@ -14,14 +18,12 @@ class VisualizationService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create(self, payload: VisualizationCreate, user_id: int) -> VisualizationResponse:
-        # Verify query ownership
-        result = await self.db.execute(select(Query).where(Query.id == payload.query_id))
-        query = result.scalar_one_or_none()
-        if not query:
-            raise NotFoundError("Query not found.")
-        if query.user_id != user_id:
-            raise ForbiddenError()
+    async def create(
+        self, payload: VisualizationCreate, user_id: int
+    ) -> VisualizationResponse:
+        await get_owned(
+            self.db, Query, payload.query_id, user_id, not_found_msg="Query not found."
+        )
 
         viz = Visualization(
             query_id=payload.query_id,
@@ -41,23 +43,24 @@ class VisualizationService:
         viz = await self._get_owned(viz_id, user_id)
         return VisualizationResponse.model_validate(viz)
 
-    async def list_for_query(self, query_id: int, user_id: int) -> list[VisualizationResponse]:
+    async def list_for_query(
+        self, query_id: int, user_id: int
+    ) -> list[VisualizationResponse]:
         # Verify query ownership first — a query the user doesn't own should
         # 404/403 the same way create() does, rather than silently returning
         # an empty list for someone else's query_id.
-        result = await self.db.execute(select(Query).where(Query.id == query_id))
-        query = result.scalar_one_or_none()
-        if not query:
-            raise NotFoundError("Query not found.")
-        if query.user_id != user_id:
-            raise ForbiddenError()
+        await get_owned(
+            self.db, Query, query_id, user_id, not_found_msg="Query not found."
+        )
 
         viz_result = await self.db.execute(
             select(Visualization)
             .where(Visualization.query_id == query_id, Visualization.user_id == user_id)
             .order_by(Visualization.created_at.desc())
         )
-        return [VisualizationResponse.model_validate(v) for v in viz_result.scalars().all()]
+        return [
+            VisualizationResponse.model_validate(v) for v in viz_result.scalars().all()
+        ]
 
     async def update(
         self, viz_id: int, user_id: int, payload: VisualizationUpdate
@@ -76,5 +79,9 @@ class VisualizationService:
 
     async def _get_owned(self, viz_id: int, user_id: int) -> Visualization:
         return await get_owned(
-            self.db, Visualization, viz_id, user_id, not_found_msg="Visualization not found."
+            self.db,
+            Visualization,
+            viz_id,
+            user_id,
+            not_found_msg="Visualization not found.",
         )

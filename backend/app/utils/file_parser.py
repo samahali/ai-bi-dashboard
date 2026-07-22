@@ -8,6 +8,7 @@ file types, every reader returns an ordered ``{table_name: DataFrame}`` mapping
 (CSV/JSON yield exactly one entry named ``data``; Excel yields one entry per
 sheet, keyed by the sanitized sheet name).
 """
+
 from typing import Any
 
 import pandas as pd
@@ -28,7 +29,9 @@ SAMPLE_SIZE = 5
 
 
 class FileParser:
-    async def parse_and_index(self, dataset_id: int, file_path: str, file_type: str) -> None:
+    async def parse_and_index(
+        self, dataset_id: int, file_path: str, file_type: str
+    ) -> None:
         """
         Parse the file, infer column metadata, and update the Dataset status.
         Called as a background task after upload — opens its own DB session
@@ -47,10 +50,14 @@ class FileParser:
                 primary_name = next(iter(named))
                 primary_df = named[primary_name][1]
 
-                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                result = await db.execute(
+                    select(Dataset).where(Dataset.id == dataset_id)
+                )
                 dataset = result.scalar_one_or_none()
                 if not dataset:
-                    logger.warning("Dataset not found during parsing", dataset_id=dataset_id)
+                    logger.warning(
+                        "Dataset not found during parsing", dataset_id=dataset_id
+                    )
                     return
 
                 dataset.row_count = len(primary_df)
@@ -72,15 +79,22 @@ class FileParser:
                 # Insights per table: {name: (original_name, df)} -> generate
                 # independently per sheet, tagged with its table name.
                 dataframes_by_table = {name: df for name, (_orig, df) in named.items()}
-                await self._generate_insights(db, dataset_id, dataset.user_id, dataframes_by_table)
+                await self._generate_insights(
+                    db, dataset_id, dataset.user_id, dataframes_by_table
+                )
 
                 from app.ai.rag_store import SchemaRAGStore
+
                 SchemaRAGStore().index_dataset_schema(dataset_id, tables_metadata)
 
             except Exception as exc:
-                logger.error("Failed to parse dataset", dataset_id=dataset_id, error=str(exc))
+                logger.error(
+                    "Failed to parse dataset", dataset_id=dataset_id, error=str(exc)
+                )
                 await db.rollback()
-                result = await db.execute(select(Dataset).where(Dataset.id == dataset_id))
+                result = await db.execute(
+                    select(Dataset).where(Dataset.id == dataset_id)
+                )
                 dataset = result.scalar_one_or_none()
                 if dataset:
                     dataset.status = "error"
@@ -88,7 +102,11 @@ class FileParser:
                     await db.commit()
 
     async def _generate_insights(
-        self, db: AsyncSession, dataset_id: int, user_id: int, dataframes_by_table: dict[str, pd.DataFrame]
+        self,
+        db: AsyncSession,
+        dataset_id: int,
+        user_id: int,
+        dataframes_by_table: dict[str, pd.DataFrame],
     ) -> None:
         """
         Run statistical insight detection independently per table and persist
@@ -115,7 +133,9 @@ class FileParser:
             except Exception as exc:
                 logger.error(
                     "Failed to generate insights for table",
-                    dataset_id=dataset_id, table=table_name, error=str(exc),
+                    dataset_id=dataset_id,
+                    table=table_name,
+                    error=str(exc),
                 )
                 await db.rollback()
         if total:
@@ -130,7 +150,9 @@ class FileParser:
         """
         return {
             name: df
-            for name, (_orig, df) in self._read_named_frames(file_path, file_type).items()
+            for name, (_orig, df) in self._read_named_frames(
+                file_path, file_type
+            ).items()
         }
 
     def read_csv_page(self, file_path: str, offset: int, limit: int) -> pd.DataFrame:
@@ -153,7 +175,12 @@ class FileParser:
         by sanitized table name; insertion order = sheet order.
         """
         if file_type == "csv":
-            return {DEFAULT_TABLE_NAME: (DEFAULT_TABLE_NAME, pd.read_csv(file_path, low_memory=False))}
+            return {
+                DEFAULT_TABLE_NAME: (
+                    DEFAULT_TABLE_NAME,
+                    pd.read_csv(file_path, low_memory=False),
+                )
+            }
         if file_type == "json":
             return {DEFAULT_TABLE_NAME: (DEFAULT_TABLE_NAME, pd.read_json(file_path))}
         if file_type == "excel":
@@ -195,8 +222,7 @@ class FileParser:
             dtype = series.dtype
             col_type = self._pandas_type_to_str(dtype)
             samples = [
-                v for v in series.dropna().head(SAMPLE_SIZE).tolist()
-                if v is not None
+                v for v in series.dropna().head(SAMPLE_SIZE).tolist() if v is not None
             ]
             metadata[str(col)] = {
                 "type": col_type,

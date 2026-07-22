@@ -20,15 +20,18 @@ transformers model download) — the column corpus is small, structured text
 (names/types/sample values, not prose), where a hashing vectorizer is a
 reasonable fit and keeps the app free of a ~80MB first-query model download.
 """
-import chromadb
+
 import contextlib
 import hashlib
 import math
-import structlog
-from app.config import settings
-from chromadb import Documents, EmbeddingFunction, Embeddings
 from collections import Counter
 from typing import Any
+
+import chromadb
+import structlog
+from chromadb import Documents, EmbeddingFunction, Embeddings
+
+from app.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +50,7 @@ def _dynamic_top_k(total_columns: int) -> int:
     [TOP_K_MIN, TOP_K_MAX]."""
     scaled = math.ceil(total_columns * TOP_K_RATIO)
     return max(TOP_K_MIN, min(scaled, TOP_K_MAX))
+
 
 # Module-level singleton ChromaDB client — mirrors the engine/AsyncSessionLocal
 # pattern in db/session.py. Each of SchemaRAGStore's 3 call sites (agent.py,
@@ -85,7 +89,10 @@ class HashingEmbeddingFunction(EmbeddingFunction):
         tokens = HashingEmbeddingFunction._tokenize(text)
         vector = [0.0] * EMBEDDING_DIMENSIONS
         for token, count in Counter(tokens).items():
-            idx = int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16) % EMBEDDING_DIMENSIONS
+            idx = (
+                int(hashlib.md5(token.encode("utf-8")).hexdigest(), 16)
+                % EMBEDDING_DIMENSIONS
+            )
             vector[idx] += count
         norm = math.sqrt(sum(v * v for v in vector)) or 1.0
         return [v / norm for v in vector]
@@ -93,6 +100,7 @@ class HashingEmbeddingFunction(EmbeddingFunction):
     @staticmethod
     def _tokenize(text: str) -> list[str]:
         import re
+
         # Split camelCase/snake_case/kebab-case column names into sub-words
         # so "customer_id" and "signup date" retrieve similarly to "customer id".
         text = re.sub(r"[_\-]", " ", text)
@@ -113,7 +121,9 @@ class SchemaRAGStore:
     def _collection_name(dataset_id: int) -> str:
         return f"dataset_{dataset_id}_schema"
 
-    def index_dataset_schema(self, dataset_id: int, tables_metadata: dict[str, Any]) -> None:
+    def index_dataset_schema(
+        self, dataset_id: int, tables_metadata: dict[str, Any]
+    ) -> None:
         """
         Embed every column of every table in a dataset as a retrievable,
         table-tagged document. `tables_metadata` maps table_name → {columns:
@@ -130,7 +140,9 @@ class SchemaRAGStore:
             name = self._collection_name(dataset_id)
             with contextlib.suppress(Exception):
                 client.delete_collection(name)
-            collection = client.create_collection(name, embedding_function=self._embedding_fn)
+            collection = client.create_collection(
+                name, embedding_function=self._embedding_fn
+            )
 
             ids, documents, metadatas = [], [], []
             for table_name, table_meta in tables_metadata.items():
@@ -145,23 +157,33 @@ class SchemaRAGStore:
                         doc += f" — example values: {', '.join(str(s) for s in samples[:5])}"
                     ids.append(f"{table_name}.{col}")
                     documents.append(doc)
-                    metadatas.append({
-                        "table": table_name,
-                        "column": col,
-                        "type": col_type,
-                        "nullable": bool(meta.get("nullable", False)),
-                    })
+                    metadatas.append(
+                        {
+                            "table": table_name,
+                            "column": col,
+                            "type": col_type,
+                            "nullable": bool(meta.get("nullable", False)),
+                        }
+                    )
 
             if ids:
                 collection.add(ids=ids, documents=documents, metadatas=metadatas)
             logger.info(
                 "Indexed dataset schema in ChromaDB",
-                dataset_id=dataset_id, tables=len(tables_metadata), columns=len(ids),
+                dataset_id=dataset_id,
+                tables=len(tables_metadata),
+                columns=len(ids),
             )
         except Exception as exc:
-            logger.warning("Failed to index dataset schema in ChromaDB", dataset_id=dataset_id, error=str(exc))
+            logger.warning(
+                "Failed to index dataset schema in ChromaDB",
+                dataset_id=dataset_id,
+                error=str(exc),
+            )
 
-    def retrieve_relevant_columns(self, dataset_id: int, question: str) -> list[str] | None:
+    def retrieve_relevant_columns(
+        self, dataset_id: int, question: str
+    ) -> list[str] | None:
         """
         Return the table-qualified column names (`"table.column"`) most relevant
         to `question`, or None if retrieval isn't available or the schema is
@@ -193,11 +215,18 @@ class SchemaRAGStore:
                 return None
             logger.info(
                 "RAG retrieved columns",
-                dataset_id=dataset_id, total_columns=total, top_k=top_k, retrieved=len(qualified),
+                dataset_id=dataset_id,
+                total_columns=total,
+                top_k=top_k,
+                retrieved=len(qualified),
             )
             return qualified
         except Exception as exc:
-            logger.warning("ChromaDB retrieval failed, falling back to full schema", dataset_id=dataset_id, error=str(exc))
+            logger.warning(
+                "ChromaDB retrieval failed, falling back to full schema",
+                dataset_id=dataset_id,
+                error=str(exc),
+            )
             return None
 
     def delete_dataset_schema(self, dataset_id: int) -> None:
@@ -205,4 +234,8 @@ class SchemaRAGStore:
         try:
             self._get_client().delete_collection(self._collection_name(dataset_id))
         except Exception as exc:
-            logger.warning("Failed to delete ChromaDB collection", dataset_id=dataset_id, error=str(exc))
+            logger.warning(
+                "Failed to delete ChromaDB collection",
+                dataset_id=dataset_id,
+                error=str(exc),
+            )

@@ -12,6 +12,7 @@ hierarchy: there are only 5 call sites and no other shared state/behavior
 between the services, so inheritance would add indirection without buying
 anything.
 """
+
 from typing import TypeVar
 
 from sqlalchemy import ColumnExpressionArgument, select

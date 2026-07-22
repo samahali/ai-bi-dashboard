@@ -8,6 +8,7 @@ through one `prompt | llm | StrOutputParser()` chain, so SQL generation
 itself is genuinely LangChain-orchestrated rather than a raw SDK call
 branching on provider at the call site.
 """
+
 from typing import Any
 
 import structlog
@@ -67,13 +68,15 @@ class BIAgent:
                 project_id=settings.watsonx_project_id,
                 params={
                     Params.MAX_NEW_TOKENS: 512,
-                    Params.TEMPERATURE: 0.0,   # Deterministic for SQL
+                    Params.TEMPERATURE: 0.0,  # Deterministic for SQL
                     Params.STOP_SEQUENCES: [";"],
                 },
             )
             return WatsonxGraniteLLM(model=watsonx_model)
         except Exception as e:
-            if not settings.openai_api_key or settings.openai_api_key.startswith("sk-your-"):
+            if not settings.openai_api_key or settings.openai_api_key.startswith(
+                "sk-your-"
+            ):
                 raise AIServiceError(
                     f"Granite (Watsonx) initialization failed and no valid OpenAI "
                     f"fallback key is configured. Original error: {e}"
@@ -85,6 +88,7 @@ class BIAgent:
 
     def _init_openai(self):
         from langchain_openai import ChatOpenAI
+
         return ChatOpenAI(
             model=settings.openai_model,
             api_key=settings.openai_api_key,
@@ -158,7 +162,8 @@ class BIAgent:
         except ValueError as exec_error:
             logger.warning(
                 "SQL execution failed, attempting one repair",
-                dataset_id=dataset.id, error=str(exec_error),
+                dataset_id=dataset.id,
+                error=str(exec_error),
             )
             repaired = True
             sql = await self._repair_sql(
@@ -186,7 +191,7 @@ class BIAgent:
 
         return {
             "sql": sql,
-            "results": results[:500],     # Cap results for response size
+            "results": results[:500],  # Cap results for response size
             "confidence_score": confidence_score,
             "visualization_suggestion": viz_suggestion,
         }
@@ -247,13 +252,13 @@ class BIAgent:
         """
         score = 1.0
         if used_fallback:
-            score -= 0.15   # generation happened on the secondary provider
+            score -= 0.15  # generation happened on the secondary provider
         if rag_truncated:
-            score -= 0.10   # the LLM saw a RAG-narrowed schema, not the full one
+            score -= 0.10  # the LLM saw a RAG-narrowed schema, not the full one
         if repaired:
-            score -= 0.20   # the first generated query failed and needed a retry
+            score -= 0.20  # the first generated query failed and needed a retry
         if row_count == 0:
-            score -= 0.15   # a correct-looking query with zero rows is often a mismatch
+            score -= 0.15  # a correct-looking query with zero rows is often a mismatch
         return round(max(score, 0.4), 2)
 
     @staticmethod
@@ -262,7 +267,7 @@ class BIAgent:
         sql = raw.strip()
         for fence in ("```sql", "```"):
             if sql.startswith(fence):
-                sql = sql[len(fence):]
+                sql = sql[len(fence) :]
         if sql.endswith("```"):
             sql = sql[:-3]
         sql = sql.strip()
@@ -385,6 +390,7 @@ class BIAgent:
         if not results:
             return "table"
         import pandas as pd
+
         df = pd.DataFrame(results)
         cols = list(df.columns)
         numeric_cols = [c for c in cols if pd.api.types.is_numeric_dtype(df[c])]

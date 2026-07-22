@@ -5,6 +5,7 @@ Tokens are delivered to the browser as httpOnly cookies rather than in the
 response body / localStorage, so client-side JavaScript (and therefore any
 XSS) cannot read them. See docs/SECURITY.md.
 """
+
 from fastapi import Response
 
 from app.config import settings
@@ -48,10 +49,18 @@ def set_auth_cookies(response: Response, access_token: str, refresh_token: str) 
 def clear_auth_cookies(response: Response) -> None:
     """Remove the auth cookies (logout). Must mirror path/domain to delete."""
     response.delete_cookie(
-        ACCESS_COOKIE, domain=settings.cookie_domain, path="/",
-        samesite=settings.cookie_samesite, secure=_secure(), httponly=True,
+        ACCESS_COOKIE,
+        domain=settings.cookie_domain,
+        path="/",
+        samesite=settings.cookie_samesite,
+        secure=_secure(),
+        httponly=True,
     )
     response.delete_cookie(
-        REFRESH_COOKIE, domain=settings.cookie_domain, path="/api/v1/auth/refresh",
-        samesite=settings.cookie_samesite, secure=_secure(), httponly=True,
+        REFRESH_COOKIE,
+        domain=settings.cookie_domain,
+        path="/api/v1/auth/refresh",
+        samesite=settings.cookie_samesite,
+        secure=_secure(),
+        httponly=True,
     )

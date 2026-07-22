@@ -8,13 +8,16 @@ DuckDB is ideal here because:
 - Fast for analytical queries
 - No data duplication needed
 """
-import duckdb
+
 import re
+from typing import Any
+
+import duckdb
 import sqlglot
 import structlog
-from app.utils.file_parser import FileParser
 from sqlglot import exp
-from typing import Any
+
+from app.utils.file_parser import FileParser
 
 logger = structlog.get_logger(__name__)
 
@@ -24,9 +27,19 @@ logger = structlog.get_logger(__name__)
 # a clear reason. Kept as belt-and-suspenders alongside the sqlglot AST checks.
 _FILE_ACCESS_FUNCTIONS = frozenset(
     [
-        "read_csv", "read_csv_auto", "read_parquet", "read_json",
-        "read_json_auto", "read_ndjson", "read_text", "read_blob",
-        "glob", "sniff_csv", "copy", "install", "load",
+        "read_csv",
+        "read_csv_auto",
+        "read_parquet",
+        "read_json",
+        "read_json_auto",
+        "read_ndjson",
+        "read_text",
+        "read_blob",
+        "glob",
+        "sniff_csv",
+        "copy",
+        "install",
+        "load",
     ]
 )
 

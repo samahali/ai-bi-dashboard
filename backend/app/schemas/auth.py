@@ -1,6 +1,7 @@
 """
 Auth Pydantic schemas — request and response shapes for auth endpoints.
 """
+
 from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
@@ -9,7 +10,9 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_]+$")
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=72, description="Max 72 chars (bcrypt limit)")
+    password: str = Field(
+        ..., min_length=8, max_length=72, description="Max 72 chars (bcrypt limit)"
+    )
     first_name: str | None = Field(None, max_length=100)
     last_name: str | None = Field(None, max_length=100)
 
@@ -17,7 +20,9 @@ class RegisterRequest(BaseModel):
     @classmethod
     def password_strength(cls, v: str) -> str:
         if len(v) > 72:
-            raise ValueError("Password must not exceed 72 characters (bcrypt limitation).")
+            raise ValueError(
+                "Password must not exceed 72 characters (bcrypt limitation)."
+            )
         if not any(c.isupper() for c in v):
             raise ValueError("Password must contain at least one uppercase letter.")
         if not any(c.isdigit() for c in v):

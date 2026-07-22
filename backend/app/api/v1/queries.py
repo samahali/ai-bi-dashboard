@@ -1,6 +1,7 @@
 """
 Queries router — natural language to SQL execution.
 """
+
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -4,11 +4,13 @@ Custom application exceptions.
 All exceptions inherit from AppError so the global handler can catch them
 and return consistent JSON error responses.
 """
+
 from fastapi import HTTPException, status
 
 
 class AppError(HTTPException):
     """Base application exception."""
+
     status_code: int = status.HTTP_500_INTERNAL_SERVER_ERROR
     detail: str = "An unexpected error occurred."
 

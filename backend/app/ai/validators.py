@@ -2,6 +2,7 @@
 Prompt injection validator.
 Prevents users from hijacking the LLM via crafted questions.
 """
+
 import re
 from typing import Tuple
 
@@ -28,10 +29,10 @@ _INJECTION_PATTERNS: list[str] = [
     r"repeat\s+(the\s+)?(prompt|instructions?|everything\s+above)",
     r"\b(read_csv|read_parquet|read_json|read_text|read_blob)\b",  # file-access funcs
     r"\b(INSERT\s+INTO|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE|TRUNCATE\s+TABLE)\b",
-    r"\bUPDATE\b\s+\w+\s+\bSET\b",   # UPDATE ... SET (word-bounded; won't hit "updated")
-    r"--\s*$",           # SQL comment injection
+    r"\bUPDATE\b\s+\w+\s+\bSET\b",  # UPDATE ... SET (word-bounded; won't hit "updated")
+    r"--\s*$",  # SQL comment injection
     r";\s*\b(DROP|DELETE|UPDATE|INSERT)\b",
-    r"<<<|>>>",          # attempt to spoof the prompt's question delimiters
+    r"<<<|>>>",  # attempt to spoof the prompt's question delimiters
 ]
 
 _COMPILED = [re.compile(p, re.IGNORECASE) for p in _INJECTION_PATTERNS]
@@ -56,7 +57,9 @@ class PromptInjectionValidator:
                 return False, "Question contains disallowed content."
 
         # Reject excessive special characters (likely injection attempt)
-        special_ratio = sum(1 for c in question if not c.isalnum() and c not in " ?.,'-") / len(question)
+        special_ratio = sum(
+            1 for c in question if not c.isalnum() and c not in " ?.,'-"
+        ) / len(question)
         if special_ratio > 0.4:
             return False, "Too many special characters in question."
 

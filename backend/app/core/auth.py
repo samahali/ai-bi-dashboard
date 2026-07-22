@@ -1,10 +1,11 @@
 """
 JWT token creation and validation.
 """
+
 from datetime import datetime, timedelta, timezone
 
-from jose import jwt
 import bcrypt
+from jose import jwt
 
 from app.config import settings
 
@@ -24,14 +25,18 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(subject: str | int) -> str:
     """Create a short-lived JWT access token."""
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expire = datetime.now(timezone.utc) + timedelta(
+        minutes=settings.access_token_expire_minutes
+    )
     payload = {"sub": str(subject), "type": "access", "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
 def create_refresh_token(subject: str | int) -> str:
     """Create a long-lived JWT refresh token."""
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
+    expire = datetime.now(timezone.utc) + timedelta(
+        days=settings.refresh_token_expire_days
+    )
     payload = {"sub": str(subject), "type": "refresh", "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 

@@ -1,6 +1,7 @@
 """
 Reports router — PDF report generation and download.
 """
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession

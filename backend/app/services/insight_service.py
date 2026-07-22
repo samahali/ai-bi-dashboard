@@ -1,6 +1,7 @@
 """
 Insight service — fetches and manages AI-detected insights.
 """
+
 from datetime import datetime, timezone
 
 from sqlalchemy import select

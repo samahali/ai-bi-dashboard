@@ -1,6 +1,7 @@
 """
 Dataset Pydantic schemas.
 """
+
 from datetime import datetime
 from typing import Any
 
@@ -36,7 +37,9 @@ class DatasetResponse(BaseModel):
     row_count: int | None
     column_count: int | None
     columns_metadata: dict[str, Any] | None
-    tables_metadata: dict[str, Any] | None = None       # multi-sheet Excel: per-table metadata
+    tables_metadata: dict[str, Any] | None = (
+        None  # multi-sheet Excel: per-table metadata
+    )
     table_relationships: list[dict[str, Any]] | None = None  # detected likely joins
     is_public: bool
     status: str

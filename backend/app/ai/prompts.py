@@ -2,7 +2,6 @@
 LLM prompt templates for Text-to-SQL generation.
 """
 
-
 _FEW_SHOT_EXAMPLES = """
 -- Example 1 (single table)
 -- Table: sales | Columns: date DATE, region VARCHAR, product VARCHAR, amount FLOAT

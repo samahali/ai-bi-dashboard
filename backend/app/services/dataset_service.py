@@ -1,6 +1,7 @@
 """
 Dataset service — CRUD and preview operations.
 """
+
 import math
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,14 +26,22 @@ class DatasetService:
     async def list_datasets(
         self, user_id: int, page: int, limit: int, search: str | None
     ) -> PaginatedDatasets:
-        query = select(Dataset).where(Dataset.user_id == user_id, Dataset.deleted_at.is_(None))
+        query = select(Dataset).where(
+            Dataset.user_id == user_id, Dataset.deleted_at.is_(None)
+        )
         if search:
             query = query.where(Dataset.name.ilike(f"%{search}%"))
 
-        total_result = await self.db.execute(select(func.count()).select_from(query.subquery()))
+        total_result = await self.db.execute(
+            select(func.count()).select_from(query.subquery())
+        )
         total = total_result.scalar_one()
 
-        query = query.order_by(Dataset.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        query = (
+            query.order_by(Dataset.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await self.db.execute(query)
         datasets = result.scalars().all()
 
@@ -111,11 +120,13 @@ class DatasetService:
 
     async def delete_dataset(self, dataset_id: int, user_id: int) -> None:
         from datetime import datetime, timezone
+
         dataset = await self._get_owned(dataset_id, user_id)
         dataset.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
 
         from app.ai.rag_store import SchemaRAGStore
+
         SchemaRAGStore().delete_dataset_schema(dataset_id)
 
     async def _get_owned(self, dataset_id: int, user_id: int) -> Dataset:

@@ -9,6 +9,7 @@ LangChain `LLM` is what lets `agent.py` build one real
 `prompt | llm | StrOutputParser()` chain regardless of provider, instead of
 branching on provider at the call site.
 """
+
 from typing import Any, Optional
 
 from langchain_core.callbacks.manager import CallbackManagerForLLMRun

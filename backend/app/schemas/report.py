@@ -1,6 +1,7 @@
 """
 Report Pydantic schemas.
 """
+
 from datetime import datetime
 
 from pydantic import BaseModel, Field, model_validator

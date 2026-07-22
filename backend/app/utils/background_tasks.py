@@ -9,6 +9,7 @@ strong reference in a module-level set for the task's lifetime and
 removes it automatically on completion, so callers get fire-and-forget
 semantics without risking early GC.
 """
+
 import asyncio
 from collections.abc import Coroutine
 from typing import Any

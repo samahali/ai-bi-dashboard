@@ -1,12 +1,13 @@
 """
 Query service — orchestrates the Text-to-SQL AI flow.
 """
+
 from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DatasetNotReadyError, ForbiddenError, NotFoundError
+from app.core.exceptions import DatasetNotReadyError
 from app.db.models import Dataset, Query
 from app.db.session import AsyncSessionLocal
 from app.schemas.query import QueryCreate, QueryResponse, QueryStatusResponse
@@ -18,16 +19,17 @@ class QueryService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_query(self, payload: QueryCreate, user_id: int) -> QueryStatusResponse:
-        # Verify dataset ownership and readiness
-        result = await self.db.execute(
-            select(Dataset).where(Dataset.id == payload.dataset_id, Dataset.deleted_at.is_(None))
+    async def create_query(
+        self, payload: QueryCreate, user_id: int
+    ) -> QueryStatusResponse:
+        dataset = await get_owned(
+            self.db,
+            Dataset,
+            payload.dataset_id,
+            user_id,
+            extra_filters=(Dataset.deleted_at.is_(None),),
+            not_found_msg="Dataset not found.",
         )
-        dataset = result.scalar_one_or_none()
-        if not dataset:
-            raise NotFoundError("Dataset not found.")
-        if dataset.user_id != user_id:
-            raise ForbiddenError()
         if dataset.status != "ready":
             raise DatasetNotReadyError()
 
@@ -61,7 +63,11 @@ class QueryService:
         stmt = select(Query).where(Query.user_id == user_id)
         if dataset_id:
             stmt = stmt.where(Query.dataset_id == dataset_id)
-        stmt = stmt.order_by(Query.created_at.desc()).offset((page - 1) * limit).limit(limit)
+        stmt = (
+            stmt.order_by(Query.created_at.desc())
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
         result = await self.db.execute(stmt)
         return [QueryResponse.model_validate(q) for q in result.scalars().all()]
 
@@ -70,7 +76,9 @@ class QueryService:
         await self.db.delete(query)
         await self.db.commit()
 
-    async def _execute_query(self, query_id: int, dataset: Dataset, payload: QueryCreate) -> None:
+    async def _execute_query(
+        self, query_id: int, dataset: Dataset, payload: QueryCreate
+    ) -> None:
         """
         Background task: run the AI agent and update the query record.
         Opens its own DB session since the request session that spawned it
@@ -98,7 +106,9 @@ class QueryService:
                 query.results = response.get("results")
                 query.row_count = len(response.get("results") or [])
                 query.confidence_score = response.get("confidence_score")
-                query.visualization_suggestion = response.get("visualization_suggestion")
+                query.visualization_suggestion = response.get(
+                    "visualization_suggestion"
+                )
                 # NO_ANSWER: the model determined the question can't be answered
                 # from this dataset's schema. Not an execution error — a valid
                 # "no answer" outcome, surfaced via error_message for the UI.
@@ -118,4 +128,6 @@ class QueryService:
                 await db.commit()
 
     async def _get_owned(self, query_id: int, user_id: int) -> Query:
-        return await get_owned(self.db, Query, query_id, user_id, not_found_msg="Query not found.")
+        return await get_owned(
+            self.db, Query, query_id, user_id, not_found_msg="Query not found."
+        )

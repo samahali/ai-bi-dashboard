@@ -5,6 +5,7 @@ Uses the app's own settings for the DB URL (so a single DATABASE_URL env var
 drives both the running app and migrations — no separate config to keep in
 sync) and the app's SQLAlchemy models for autogenerate support.
 """
+
 import asyncio
 from logging.config import fileConfig
 

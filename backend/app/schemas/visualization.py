@@ -1,6 +1,7 @@
 """
 Visualization Pydantic schemas.
 """
+
 from datetime import datetime
 from typing import Any, Literal
 

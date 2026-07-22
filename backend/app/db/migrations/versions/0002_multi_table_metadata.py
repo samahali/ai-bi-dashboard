@@ -13,6 +13,7 @@ No data backfill: existing rows keep `tables_metadata = NULL` and are treated
 as a single table synthesized lazily from `columns_metadata` + `file_type`, so
 pre-existing datasets continue to work unchanged.
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -26,7 +27,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     op.add_column("datasets", sa.Column("tables_metadata", sa.JSON(), nullable=True))
-    op.add_column("datasets", sa.Column("table_relationships", sa.JSON(), nullable=True))
+    op.add_column(
+        "datasets", sa.Column("table_relationships", sa.JSON(), nullable=True)
+    )
 
 
 def downgrade() -> None:

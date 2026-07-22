@@ -7,6 +7,7 @@ the tokens for non-browser API clients, but the browser app ignores them and
 relies on the cookies. The refresh token is read from its cookie, never a
 query string (which would leak it into logs/history).
 """
+
 from fastapi import APIRouter, Cookie, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +18,13 @@ from app.core.exceptions import UnauthorizedError
 from app.core.rate_limit import limiter
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    AuthResponse,
+    LoginRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserResponse,
+)
 from app.services.auth_service import AuthService
 
 router = APIRouter()

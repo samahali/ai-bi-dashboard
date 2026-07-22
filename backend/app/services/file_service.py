@@ -1,6 +1,7 @@
 """
 File upload service — validates, stores, and triggers async parsing.
 """
+
 import uuid
 from pathlib import Path
 
@@ -78,9 +79,9 @@ class FileService:
             user_id=user_id,
             name=name,
             description=description,
-            file_name=original_name,   # sanitized basename, for display only
+            file_name=original_name,  # sanitized basename, for display only
             file_path=str(file_path),
-            file_type=file_type,       # internal type (excel|csv|json)
+            file_type=file_type,  # internal type (excel|csv|json)
             file_size=len(content),
             is_public=is_public,
             status="processing",
@@ -93,6 +94,7 @@ class FileService:
         # Uses its own DB session since it outlives this request's session.
         # track() keeps a strong reference so the task can't be GC'd mid-run.
         from app.utils.background_tasks import track
+
         track(FileParser().parse_and_index(dataset.id, str(file_path), file_type))
 
         return DatasetResponse.model_validate(dataset)

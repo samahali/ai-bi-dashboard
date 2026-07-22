@@ -7,6 +7,7 @@ file) the dataset is a single table. This helper returns a uniform
 ``{table_name: {columns: {...}, ...}}`` view regardless, so callers never have
 to special-case NULL `tables_metadata`.
 """
+
 from typing import Any
 
 from app.utils.identifiers import DEFAULT_TABLE_NAME

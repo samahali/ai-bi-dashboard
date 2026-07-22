@@ -12,6 +12,7 @@ create_all()-provisioned database in line with Alembic's version table via
 `alembic stamp 0001` (see docs/GUIDE.md), or provisions a fresh
 database identically via `alembic upgrade head`.
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -35,8 +36,12 @@ def upgrade() -> None:
         sa.Column("avatar_url", sa.String(500)),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("is_admin", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
         sa.Column("last_login", sa.DateTime(timezone=True)),
     )
     op.create_index("ix_users_username", "users", ["username"], unique=True)
@@ -45,7 +50,12 @@ def upgrade() -> None:
     op.create_table(
         "datasets",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(255), nullable=False),
         sa.Column("description", sa.Text()),
         sa.Column("file_name", sa.String(255), nullable=False),
@@ -58,8 +68,12 @@ def upgrade() -> None:
         sa.Column("is_public", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("status", sa.String(20), nullable=False, server_default="uploaded"),
         sa.Column("error_message", sa.Text()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
         sa.Column("deleted_at", sa.DateTime(timezone=True)),
     )
     op.create_index("idx_datasets_user_id", "datasets", ["user_id"])
@@ -69,8 +83,18 @@ def upgrade() -> None:
     op.create_table(
         "queries",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("dataset_id", sa.Integer(), sa.ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "dataset_id",
+            sa.Integer(),
+            sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("generated_sql", sa.Text()),
         sa.Column("results", sa.JSON()),
@@ -81,7 +105,9 @@ def upgrade() -> None:
         sa.Column("ai_model_used", sa.String(50)),
         sa.Column("confidence_score", sa.Float()),
         sa.Column("visualization_suggestion", sa.String(20)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
         sa.Column("executed_at", sa.DateTime(timezone=True)),
     )
     op.create_index("idx_queries_user_id", "queries", ["user_id"])
@@ -91,23 +117,47 @@ def upgrade() -> None:
     op.create_table(
         "visualizations",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("query_id", sa.Integer(), sa.ForeignKey("queries.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "query_id",
+            sa.Integer(),
+            sa.ForeignKey("queries.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("chart_type", sa.String(50), nullable=False),
         sa.Column("title", sa.String(255)),
         sa.Column("config", sa.JSON()),
         sa.Column("x_axis", sa.String(100)),
         sa.Column("y_axis", sa.String(100)),
         sa.Column("is_saved", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
 
     op.create_table(
         "reports",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("dataset_id", sa.Integer(), sa.ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "dataset_id",
+            sa.Integer(),
+            sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("description", sa.Text()),
         sa.Column("query_ids", sa.JSON()),
@@ -117,8 +167,12 @@ def upgrade() -> None:
         sa.Column("file_size", sa.Integer()),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("downloaded_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
     op.create_index("idx_reports_user_id", "reports", ["user_id"])
     op.create_index("idx_reports_dataset_id", "reports", ["dataset_id"])
@@ -126,8 +180,18 @@ def upgrade() -> None:
     op.create_table(
         "insights",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("dataset_id", sa.Integer(), sa.ForeignKey("datasets.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "dataset_id",
+            sa.Integer(),
+            sa.ForeignKey("datasets.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("insight_type", sa.String(50), nullable=False),
         sa.Column("title", sa.String(255), nullable=False),
         sa.Column("description", sa.Text(), nullable=False),
@@ -135,8 +199,12 @@ def upgrade() -> None:
         sa.Column("severity", sa.String(20), nullable=False, server_default="medium"),
         sa.Column("confidence_score", sa.Float()),
         sa.Column("insight_metadata", sa.JSON()),
-        sa.Column("is_dismissed", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "is_dismissed", sa.Boolean(), nullable=False, server_default=sa.false()
+        ),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
         sa.Column("dismissed_at", sa.DateTime(timezone=True)),
     )
     op.create_index("idx_insights_user_id", "insights", ["user_id"])
@@ -145,13 +213,22 @@ def upgrade() -> None:
     op.create_table(
         "refresh_tokens",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "user_id",
+            sa.Integer(),
+            sa.ForeignKey("users.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("token_hash", sa.String(255), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("revoked_at", sa.DateTime(timezone=True)),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now()
+        ),
     )
-    op.create_index("ix_refresh_tokens_token_hash", "refresh_tokens", ["token_hash"], unique=True)
+    op.create_index(
+        "ix_refresh_tokens_token_hash", "refresh_tokens", ["token_hash"], unique=True
+    )
 
 
 def downgrade() -> None:

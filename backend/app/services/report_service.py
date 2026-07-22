@@ -1,13 +1,14 @@
 """
 Report service — generates professional PDF reports from queries + visualizations.
 """
+
 from pathlib import Path
 
 from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core.exceptions import NotFoundError
 from app.db.models import Dataset, Insight, Query, Report
 from app.db.session import AsyncSessionLocal
 from app.schemas.report import ReportCreate, ReportResponse, ReportStatusResponse
@@ -19,16 +20,17 @@ class ReportService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def create_report(self, payload: ReportCreate, user_id: int) -> ReportStatusResponse:
-        # Verify dataset ownership
-        ds_result = await self.db.execute(
-            select(Dataset).where(Dataset.id == payload.dataset_id, Dataset.deleted_at.is_(None))
+    async def create_report(
+        self, payload: ReportCreate, user_id: int
+    ) -> ReportStatusResponse:
+        await get_owned(
+            self.db,
+            Dataset,
+            payload.dataset_id,
+            user_id,
+            extra_filters=(Dataset.deleted_at.is_(None),),
+            not_found_msg="Dataset not found.",
         )
-        dataset = ds_result.scalar_one_or_none()
-        if not dataset:
-            raise NotFoundError("Dataset not found.")
-        if dataset.user_id != user_id:
-            raise ForbiddenError()
 
         report = Report(
             user_id=user_id,
@@ -65,7 +67,9 @@ class ReportService:
 
     async def list_reports(self, user_id: int) -> list[ReportResponse]:
         result = await self.db.execute(
-            select(Report).where(Report.user_id == user_id).order_by(Report.created_at.desc())
+            select(Report)
+            .where(Report.user_id == user_id)
+            .order_by(Report.created_at.desc())
         )
         return [ReportResponse.model_validate(r) for r in result.scalars().all()]
 
@@ -126,11 +130,13 @@ class ReportService:
                         else_=4,
                     )
                     i_result = await db.execute(
-                        select(Insight).where(
+                        select(Insight)
+                        .where(
                             Insight.dataset_id == payload.dataset_id,
                             Insight.user_id == report.user_id,
                             Insight.is_dismissed.is_(False),
-                        ).order_by(severity_rank, Insight.created_at.desc())
+                        )
+                        .order_by(severity_rank, Insight.created_at.desc())
                     )
                     insights = list(i_result.scalars().all())
 
