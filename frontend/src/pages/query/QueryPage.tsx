@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation, useInfiniteQuery } from '@tanstack/react-query'
 import { Send, ArrowLeft, BrainCircuit, Code2, Table2, BarChart2, Save } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { datasetService } from '@/services/datasetService'
@@ -31,11 +31,25 @@ export default function QueryPage() {
     queryFn: () => datasetService.get(Number(datasetId)),
   })
 
-  // Persisted query history — survives navigating away and back, unlike local state.
-  const { data: history = [] } = useQuery({
+  // Persisted query history — survives navigating away and back, unlike local
+  // state. Paginated: only HISTORY_PAGE_SIZE load initially, "Load more"
+  // below fetches the next page and appends (a dataset can accumulate many
+  // queries over time, and loading all of them upfront doesn't scale).
+  const HISTORY_PAGE_SIZE = 20
+  const {
+    data: historyPages,
+    fetchNextPage: loadMoreHistory,
+    hasNextPage: hasMoreHistory,
+    isFetchingNextPage: loadingMoreHistory,
+  } = useInfiniteQuery({
     queryKey: ['queries', Number(datasetId)],
-    queryFn: () => queryService.list({ dataset_id: Number(datasetId), limit: 20 }),
+    queryFn: ({ pageParam }) =>
+      queryService.list({ dataset_id: Number(datasetId), page: pageParam, limit: HISTORY_PAGE_SIZE }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === HISTORY_PAGE_SIZE ? allPages.length + 1 : undefined,
   })
+  const history = historyPages?.pages.flat() ?? []
 
   // Default to the most recent query once history loads, if nothing is active yet.
   useEffect(() => {
@@ -239,6 +253,17 @@ export default function QueryPage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {hasMoreHistory && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="w-full mt-2"
+                loading={loadingMoreHistory}
+                onClick={() => loadMoreHistory()}
+              >
+                Load more
+              </Button>
             )}
           </Card>
         </div>

@@ -14,6 +14,7 @@ from app.schemas.dataset import (
     PaginationMeta,
 )
 from app.utils.file_parser import FileParser
+from app.utils.identifiers import DEFAULT_TABLE_NAME
 from app.utils.ownership import get_owned
 
 
@@ -50,19 +51,52 @@ class DatasetService:
         return DatasetResponse.model_validate(dataset)
 
     async def preview_dataset(
-        self, dataset_id: int, user_id: int, rows: int
+        self,
+        dataset_id: int,
+        user_id: int,
+        rows: int,
+        offset: int = 0,
+        table: str | None = None,
     ) -> DatasetPreviewResponse:
+        """
+        Preview a page of `rows` rows starting at `offset`. For multi-sheet
+        Excel datasets, `table` selects which sanitized table name to preview
+        (defaults to the primary/first table when omitted); an unknown table
+        falls back to the primary one rather than erroring.
+
+        CSV datasets use a true streaming read (`FileParser.read_csv_page`):
+        pandas skips the rows before `offset` at the C-parser level and stops
+        at `limit`, so paging a large CSV never loads the whole file into
+        memory. Excel/JSON have no equivalent chunked-read API in pandas, so
+        those fall back to a full read + in-memory slice — acceptable since
+        `total_rows` for every table is already known from parse-time
+        metadata, so this path never needs a second full read just to count
+        rows.
+        """
         dataset = await self._get_owned(dataset_id, user_id)
-        parser = FileParser(self.db)
-        df = parser.get_dataframe(dataset.file_path, dataset.file_type)
-        preview = df.head(rows)
+        parser = FileParser()
+
+        if dataset.file_type == "csv":
+            selected_name = DEFAULT_TABLE_NAME
+            preview = parser.read_csv_page(dataset.file_path, offset, rows)
+            total_rows = dataset.row_count
+        else:
+            frames = parser.get_dataframes(dataset.file_path, dataset.file_type)
+            selected_name = table if table in frames else next(iter(frames))
+            preview = frames[selected_name].iloc[offset : offset + rows]
+            if dataset.tables_metadata and selected_name in dataset.tables_metadata:
+                total_rows = dataset.tables_metadata[selected_name]["row_count"]
+            else:
+                total_rows = len(frames[selected_name])
 
         return DatasetPreviewResponse(
             id=dataset.id,
+            table=selected_name,
             columns=list(preview.columns),
             data=preview.values.tolist(),
             row_count=len(preview),
-            total_rows=dataset.row_count or len(df),
+            total_rows=total_rows,
+            offset=offset,
         )
 
     async def update_dataset(

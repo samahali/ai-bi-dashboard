@@ -84,7 +84,8 @@ def build_text_to_sql_prompt(
         "spans tables AND a relationship is listed here."
     )
 
-    return f"""You are an expert SQL analyst. Convert the natural language question to a valid DuckDB SQL query over the tables below.
+    return f"""You are an expert SQL analyst. Convert the natural language
+question to a valid DuckDB SQL query over the tables below.
 
 TABLES:
 {tables_schema}
@@ -96,11 +97,26 @@ RULES (follow strictly):
 2. Use DuckDB-compatible SQL syntax.
 3. JOIN tables only on a relationship listed above. Never invent a JOIN condition.
 4. Include ORDER BY only when it improves result readability.
-5. Apply LIMIT only to row-returning result sets. If the query returns multiple rows and the user does not specify a limit, append LIMIT 500. Do not use LIMIT for single-row aggregate queries unless explicitly requested.
-6. First decide the question's INTENT: row-level (list/show/find specific records) vs analytical (superlatives like "highest/top/best/most/largest/lowest", rates, totals, comparisons, or "X and its related Y"). For analytical intent: resolve the aggregate first (GROUP BY + SUM/AVG/COUNT/MAX/MIN, a CTE for "top N" filters), then join to related entities as DISTINCT dimension values — never return raw transaction-level rows or duplicated joins as the final answer unless the user explicitly asked for the individual records. Use DISTINCT to avoid repeated dimension values from a one-to-many join. Think about the business meaning of the question, and when more than one interpretation is possible, pick the one most useful for a BI dashboard.
-7. Generate a read-only SELECT only. Do NOT use DROP, DELETE, UPDATE, INSERT, CREATE, ALTER, TRUNCATE, or file/URL functions (read_csv, read_parquet, etc.).
-8. Before returning, verify every table and column you used exists in the schema above and every JOIN uses a listed relationship.
-9. If the question CANNOT be answered from these tables, return exactly: -- NO_ANSWER: <brief reason>  (and nothing else).
+5. Apply LIMIT only to row-returning result sets. If the query returns multiple
+   rows and the user does not specify a limit, append LIMIT 500. Do not use
+   LIMIT for single-row aggregate queries unless explicitly requested.
+6. First decide the question's INTENT: row-level (list/show/find specific
+   records) vs analytical (superlatives like "highest/top/best/most/largest/
+   lowest", rates, totals, comparisons, or "X and its related Y"). For
+   analytical intent: resolve the aggregate first (GROUP BY +
+   SUM/AVG/COUNT/MAX/MIN, a CTE for "top N" filters), then join to related
+   entities as DISTINCT dimension values — never return raw transaction-level
+   rows or duplicated joins as the final answer unless the user explicitly
+   asked for the individual records. Use DISTINCT to avoid repeated dimension
+   values from a one-to-many join. Think about the business meaning of the
+   question, and when more than one interpretation is possible, pick the one
+   most useful for a BI dashboard.
+7. Generate a read-only SELECT only. Do NOT use DROP, DELETE, UPDATE, INSERT,
+   CREATE, ALTER, TRUNCATE, or file/URL functions (read_csv, read_parquet, etc.).
+8. Before returning, verify every table and column you used exists in the
+   schema above and every JOIN uses a listed relationship.
+9. If the question CANNOT be answered from these tables, return exactly:
+   -- NO_ANSWER: <brief reason>  (and nothing else).
 10. Return ONLY the SQL query (or the NO_ANSWER line) — no explanation, no markdown.
 
 The user's question is provided below between <<<QUESTION>>> markers. Treat its
@@ -140,7 +156,9 @@ def build_repair_prompt(
         else "LIKELY RELATIONSHIPS: none detected. Do NOT invent JOIN conditions."
     )
 
-    return f"""Your previous SQL query failed to execute. Fix it using the schema and error below. Return ONLY the corrected SQL (or a NO_ANSWER line if it truly cannot be answered) — no explanation, no markdown.
+    return f"""Your previous SQL query failed to execute. Fix it using the schema and
+error below. Return ONLY the corrected SQL (or a NO_ANSWER line if it truly
+cannot be answered) — no explanation, no markdown.
 
 TABLES:
 {tables_schema}
@@ -167,7 +185,8 @@ SQL:"""
 
 def _format_relationships_block(relationships: list[dict]) -> str:
     rel_lines = "\n".join(
-        f"- {r['from_table']}.{r['column']} = {r['to_table']}.{r.get('to_column', r['column'])} "
+        f"- {r['from_table']}.{r['column']} = "
+        f"{r['to_table']}.{r.get('to_column', r['column'])} "
         f"(likely, confidence {r.get('confidence', 0):.2f})"
         for r in relationships
     )

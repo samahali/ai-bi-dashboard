@@ -28,12 +28,6 @@ SAMPLE_SIZE = 5
 
 
 class FileParser:
-    def __init__(self, db: AsyncSession | None = None) -> None:
-        # `db` is only used by get_dataframe() (called within an existing request session).
-        # parse_and_index() always opens its own session since it runs as a detached
-        # background task outside the request's session lifecycle.
-        self.db = db
-
     async def parse_and_index(self, dataset_id: int, file_path: str, file_type: str) -> None:
         """
         Parse the file, infer column metadata, and update the Dataset status.
@@ -127,20 +121,6 @@ class FileParser:
         if total:
             logger.info("Insights generated", dataset_id=dataset_id, count=total)
 
-    def _read_file(self, file_path: str, file_type: str) -> pd.DataFrame:
-        """Read the primary (single, or first-sheet) table as one DataFrame.
-
-        Kept for the preview path and any single-table consumer. Multi-table
-        code paths use `get_dataframes` / `_read_named_frames` instead.
-        """
-        if file_type == "csv":
-            return pd.read_csv(file_path, low_memory=False)
-        elif file_type == "excel":
-            return pd.read_excel(file_path, engine="openpyxl")
-        elif file_type == "json":
-            return pd.read_json(file_path)
-        raise ValueError(f"Unsupported file type: {file_type}")
-
     def get_dataframes(self, file_path: str, file_type: str) -> dict[str, pd.DataFrame]:
         """
         Public: read every table into an ordered ``{table_name: DataFrame}``
@@ -148,7 +128,21 @@ class FileParser:
         executor to register all tables in DuckDB. CSV/JSON → single entry
         ``data``; Excel → one entry per sheet.
         """
-        return {name: df for name, (_orig, df) in self._read_named_frames(file_path, file_type).items()}
+        return {
+            name: df
+            for name, (_orig, df) in self._read_named_frames(file_path, file_type).items()
+        }
+
+    def read_csv_page(self, file_path: str, offset: int, limit: int) -> pd.DataFrame:
+        """
+        Read only rows `[offset, offset+limit)` of a CSV without parsing the
+        rows before `offset` (pandas `skiprows` skips them at the C-parser
+        level) or any rows after the page (`nrows` stops reading there). Used
+        by the preview endpoint so paging through a large CSV doesn't load the
+        whole file into memory just to slice it in Python.
+        """
+        skip = range(1, offset + 1) if offset > 0 else None
+        return pd.read_csv(file_path, low_memory=False, skiprows=skip, nrows=limit)
 
     def _read_named_frames(
         self, file_path: str, file_type: str

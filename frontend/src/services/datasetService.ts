@@ -12,8 +12,10 @@ export const datasetService = {
     return data
   },
 
-  async preview(id: number, rows = 50): Promise<DatasetPreview> {
-    const { data } = await api.get<DatasetPreview>(`/datasets/${id}/preview`, { params: { rows } })
+  async preview(id: number, rows = 50, offset = 0, table?: string): Promise<DatasetPreview> {
+    const { data } = await api.get<DatasetPreview>(`/datasets/${id}/preview`, {
+      params: { rows, offset, table },
+    })
     return data
   },
 

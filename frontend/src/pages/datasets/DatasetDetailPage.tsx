@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Database, MessageSquare, BarChart2, ArrowLeft, RefreshCw } from 'lucide-react'
@@ -25,9 +26,14 @@ export default function DatasetDetailPage() {
     },
   })
 
+  const [selectedTable, setSelectedTable] = useState<string | undefined>(undefined)
+
   const { data: preview } = useQuery({
-    queryKey: ['dataset-preview', datasetId],
-    queryFn: () => datasetService.preview(datasetId, 10),
+    queryKey: ['dataset-preview', datasetId, selectedTable],
+    // Virtualized DataTable only mounts visible rows, so a bigger page here
+    // is cheap to render — 200 rows gives a meaningful scrollable preview
+    // instead of a token first page.
+    queryFn: () => datasetService.preview(datasetId, 200, 0, selectedTable),
     enabled: ds?.status === 'ready',
   })
 
@@ -83,11 +89,21 @@ export default function DatasetDetailPage() {
             <Database size={14} className="text-muted" /> Available Tables
           </h3>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(ds.tables_metadata).map(([name, meta]) => (
-              <Badge key={name} variant="success">
-                {meta.original_name || name} ({formatNumber(meta.row_count)} rows)
-              </Badge>
-            ))}
+            {Object.entries(ds.tables_metadata).map(([name, meta]) => {
+              const isActive = selectedTable ? selectedTable === name : false
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => setSelectedTable(name)}
+                  className="cursor-pointer"
+                >
+                  <Badge variant={isActive ? 'info' : 'success'}>
+                    {meta.original_name || name} ({formatNumber(meta.row_count)} rows)
+                  </Badge>
+                </button>
+              )
+            })}
           </div>
         </Card>
       )}
@@ -113,7 +129,12 @@ export default function DatasetDetailPage() {
       {preview && (
         <Card>
           <h3 className="text-sm font-semibold text-[#1f2328] mb-3">
-            Preview <span className="text-muted font-normal text-xs">(first {preview.row_count} of {formatNumber(preview.total_rows)} rows)</span>
+            Preview{preview.table && ds.tables_metadata && Object.keys(ds.tables_metadata).length > 1
+              ? `: ${ds.tables_metadata[preview.table]?.original_name || preview.table}`
+              : ''}{' '}
+            <span className="text-muted font-normal text-xs">
+              (first {preview.row_count} of {formatNumber(preview.total_rows)} rows)
+            </span>
           </h3>
           <DataTable
             columns={preview.columns}

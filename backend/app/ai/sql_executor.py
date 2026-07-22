@@ -8,6 +8,7 @@ DuckDB is ideal here because:
 - Fast for analytical queries
 - No data duplication needed
 """
+import re
 from typing import Any
 
 import duckdb
@@ -50,7 +51,7 @@ class DatasetSQLExecutor:
         rejected before execution. Returns results as a list of row dicts.
         """
         # Read all tables first so validation can check against the real names.
-        parser = FileParser(db=None)
+        parser = FileParser()
         frames = parser.get_dataframes(file_path, file_type)
         allowed = set(known_tables) if known_tables else set(frames.keys())
 
@@ -84,54 +85,60 @@ class DatasetSQLExecutor:
         finally:
             conn.close()
 
-    @staticmethod
-    def _validate_sql(sql: str, allowed_tables: set[str]) -> None:
+    @classmethod
+    def _validate_sql(cls, sql: str, allowed_tables: set[str]) -> None:
         """
         Parser-based (sqlglot AST) validation — correctness over aggressiveness:
-        1. Exactly one statement, and it is a SELECT (or a CTE wrapping one).
-           Anything else (DROP/INSERT/PRAGMA/COPY/…) simply isn't a Select node.
-        2. Every referenced table is one of `allowed_tables` — catches
-           hallucinated tables and, as a bonus, file-reading table *functions*
-           (they parse as anonymous functions, not as known tables).
+        1. Reject obvious file-access function names outright (fast pre-filter).
+        2. Exactly one statement, and it is a SELECT (or a CTE wrapping one).
+        3. Every referenced table is one of `allowed_tables`.
         Column-level validation is intentionally NOT done here: aliases,
         computed expressions, `*`, and CTE-derived columns make it prone to
         false positives, and the engine surfaces a clear error for a genuinely
         bad column anyway.
         """
-        # Fast pre-filter: reject obvious file-access function names outright so
-        # the failure reason is explicit (defense in depth; engine also blocks).
+        cls._reject_file_access_functions(sql)
+        stmt = cls._parse_single_statement(sql)
+        cls._require_select_only(stmt)
+        cls._require_known_tables(stmt, allowed_tables)
+
+    @staticmethod
+    def _reject_file_access_functions(sql: str) -> None:
+        """Defense in depth alongside the engine's enable_external_access=false —
+        rejects obvious file/URL-reading function calls with an explicit reason."""
         lowered = sql.lower()
         for fn in _FILE_ACCESS_FUNCTIONS:
-            if fn in lowered:
-                # word-boundary check to avoid matching inside a column name
-                import re
-                if re.search(rf"\b{re.escape(fn)}\s*\(", lowered):
-                    raise ValueError(f"Disallowed function: {fn}")
+            if fn in lowered and re.search(rf"\b{re.escape(fn)}\s*\(", lowered):
+                raise ValueError(f"Disallowed function: {fn}")
 
+    @staticmethod
+    def _parse_single_statement(sql: str) -> exp.Expression:
         try:
-            statements = sqlglot.parse(sql, read="duckdb")
+            statements = [s for s in sqlglot.parse(sql, read="duckdb") if s is not None]
         except Exception as e:
             raise ValueError(f"Could not parse SQL: {e}") from e
-
-        real = [s for s in statements if s is not None]
-        if len(real) != 1:
+        if len(statements) != 1:
             raise ValueError("Exactly one SQL statement is allowed.")
+        return statements[0]
 
-        stmt = real[0]
-        # Allowlist by root node type — safer and less version-fragile than
-        # enumerating every forbidden DDL/DML class. A read-only query's root is
-        # a SELECT, a set operation (UNION/INTERSECT/EXCEPT), or a WITH/CTE that
-        # wraps one of those. Anything else (Insert/Update/Delete/Drop/Create/
-        # Alter*/TruncateTable/Pragma/Set/Command/…) is rejected here.
+    @staticmethod
+    def _require_select_only(stmt: exp.Expression) -> None:
+        """Allowlist by root node type — safer and less version-fragile than
+        enumerating every forbidden DDL/DML class. A read-only query's root is a
+        SELECT, a set operation (UNION/INTERSECT/EXCEPT), or a WITH/CTE wrapping
+        one of those. Anything else (Insert/Update/Delete/Drop/Create/Alter*/
+        TruncateTable/Pragma/Set/Command/…) is rejected."""
         allowed_roots = (exp.Select, exp.SetOperation, exp.Subquery)
-        root = stmt
-        if isinstance(root, exp.With):
-            root = root.this  # unwrap the CTE to its wrapped query
+        root = stmt.this if isinstance(stmt, exp.With) else stmt
         if not isinstance(root, allowed_roots):
             raise ValueError("Only read-only SELECT statements are allowed.")
 
-        # Every referenced base table must be a known, registered table. CTE
-        # names defined in the same query are allowed (they're not base tables).
+    @staticmethod
+    def _require_known_tables(stmt: exp.Expression, allowed_tables: set[str]) -> None:
+        """Every referenced base table must be a known, registered table. CTE
+        names defined in the same query are allowed (they're not base tables).
+        As a bonus, this also catches file-reading table *functions* — they
+        parse as anonymous functions, not as known Table nodes."""
         cte_names = {c.alias_or_name.lower() for c in stmt.find_all(exp.CTE)}
         for table in stmt.find_all(exp.Table):
             tname = (table.name or "").lower()

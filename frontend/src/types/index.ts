@@ -54,10 +54,12 @@ export interface Dataset {
 
 export interface DatasetPreview {
   id: number
+  table?: string
   columns: string[]
   data: unknown[][]
   row_count: number
   total_rows: number
+  offset: number
 }
 
 export interface PaginatedDatasets {

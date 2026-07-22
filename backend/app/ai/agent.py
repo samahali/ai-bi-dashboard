@@ -12,9 +12,14 @@ from typing import Any
 
 import structlog
 
+from app.ai.prompts import build_repair_prompt, build_text_to_sql_prompt
+from app.ai.rag_store import SchemaRAGStore
+from app.ai.sql_executor import DatasetSQLExecutor
+from app.ai.validators import PromptInjectionValidator
 from app.config import settings
 from app.core.exceptions import AIServiceError, PromptInjectionError
 from app.db.models import Dataset
+from app.utils.dataset_tables import effective_tables_metadata
 
 logger = structlog.get_logger(__name__)
 
@@ -102,7 +107,6 @@ class BIAgent:
         }
         """
         # 1. Validate input
-        from app.ai.validators import PromptInjectionValidator
         is_valid, reason = PromptInjectionValidator.validate(question)
         if not is_valid:
             raise PromptInjectionError(reason)
@@ -111,11 +115,12 @@ class BIAgent:
         # several tables (Excel sheets). `effective_tables_metadata` returns a
         # uniform {table: {columns: {...}}} view, synthesizing a single "data"
         # table for CSV/JSON and pre-multi-table datasets.
-        from app.ai.rag_store import SchemaRAGStore
-        from app.utils.dataset_tables import effective_tables_metadata
-
-        tables = effective_tables_metadata(dataset.tables_metadata, dataset.columns_metadata)
-        relevant_columns = SchemaRAGStore().retrieve_relevant_columns(dataset.id, question)
+        tables = effective_tables_metadata(
+            dataset.tables_metadata, dataset.columns_metadata
+        )
+        relevant_columns = SchemaRAGStore().retrieve_relevant_columns(
+            dataset.id, question
+        )
         rag_truncated = relevant_columns is not None
         tables_schema = self._format_tables_schema(tables, relevant_columns)
         relationships = dataset.table_relationships or []
@@ -128,13 +133,7 @@ class BIAgent:
         # schema (rather than hallucinating a query). Surface it cleanly.
         no_answer = self._parse_no_answer(sql)
         if no_answer is not None:
-            return {
-                "sql": None,
-                "results": [],
-                "confidence_score": 0.0,
-                "visualization_suggestion": "table",
-                "no_answer": no_answer,
-            }
+            return self._no_answer_result(no_answer)
 
         # 4. Execute SQL against the dataset's tables, scoped to the known
         # table names so a hallucinated/injected table is rejected. If
@@ -142,27 +141,34 @@ class BIAgent:
         # query using the actual error message before giving up — most
         # failures are a wrong column/table name the model can self-correct
         # once it sees DuckDB's specific complaint.
-        from app.ai.sql_executor import DatasetSQLExecutor
         executor = DatasetSQLExecutor()
         known_tables = list(tables.keys())
+
+        def run(query_sql: str) -> list[dict]:
+            return executor.execute(
+                query_sql,
+                dataset.file_path,
+                dataset.file_type,
+                known_tables=known_tables,
+            )
+
         repaired = False
         try:
-            results = executor.execute(sql, dataset.file_path, dataset.file_type, known_tables=known_tables)
+            results = run(sql)
         except ValueError as exec_error:
-            logger.warning("SQL execution failed, attempting one repair", dataset_id=dataset.id, error=str(exec_error))
+            logger.warning(
+                "SQL execution failed, attempting one repair",
+                dataset_id=dataset.id, error=str(exec_error),
+            )
             repaired = True
-            sql = await self._repair_sql(question, tables_schema, relationships, sql, str(exec_error))
+            sql = await self._repair_sql(
+                question, tables_schema, relationships, sql, str(exec_error)
+            )
             no_answer = self._parse_no_answer(sql)
             if no_answer is not None:
-                return {
-                    "sql": None,
-                    "results": [],
-                    "confidence_score": 0.0,
-                    "visualization_suggestion": "table",
-                    "no_answer": no_answer,
-                }
+                return self._no_answer_result(no_answer)
             # Let a second failure propagate — only one repair attempt.
-            results = executor.execute(sql, dataset.file_path, dataset.file_type, known_tables=known_tables)
+            results = run(sql)
 
         # 5. Suggest visualization type
         viz_suggestion = self._suggest_visualization(results)
@@ -185,28 +191,24 @@ class BIAgent:
             "visualization_suggestion": viz_suggestion,
         }
 
+    def _sql_chain(self):
+        """
+        A single LangChain Runnable chain regardless of provider — the prompt
+        template just passes through an already-built prompt string, then the
+        chosen LLM, then a plain string parser. Shared by generation and repair.
+        """
+        from langchain.output_parsers import StrOutputParser
+        from langchain.prompts import PromptTemplate
+
+        return PromptTemplate.from_template("{prompt}") | self.llm | StrOutputParser()
+
     async def _generate_sql(
         self, question: str, tables_schema: str, relationships: list[dict]
     ) -> str:
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import PromptTemplate
-
-        from app.ai.prompts import build_text_to_sql_prompt
-
-        # A single LangChain Runnable chain regardless of provider — the
-        # prompt template just passes through the already-built prompt string
-        # (build_text_to_sql_prompt does the actual templating), then the
-        # chosen LLM, then a plain string parser.
-        chain = (
-            PromptTemplate.from_template("{prompt}")
-            | self.llm
-            | StrOutputParser()
-        )
-
         prompt = build_text_to_sql_prompt(
             question=question, tables_schema=tables_schema, relationships=relationships
         )
-        raw_sql = await chain.ainvoke({"prompt": prompt})
+        raw_sql = await self._sql_chain().ainvoke({"prompt": prompt})
         return self._clean_sql(raw_sql)
 
     async def _repair_sql(
@@ -223,12 +225,6 @@ class BIAgent:
         a syntax slip). Reuses the same chain/provider as the original
         generation. Only ever called once per question (see process_question).
         """
-        from langchain_core.output_parsers import StrOutputParser
-        from langchain_core.prompts import PromptTemplate
-
-        from app.ai.prompts import build_repair_prompt
-
-        chain = PromptTemplate.from_template("{prompt}") | self.llm | StrOutputParser()
         prompt = build_repair_prompt(
             question=question,
             tables_schema=tables_schema,
@@ -236,7 +232,7 @@ class BIAgent:
             failed_sql=failed_sql,
             error_message=error_message,
         )
-        raw_sql = await chain.ainvoke({"prompt": prompt})
+        raw_sql = await self._sql_chain().ainvoke({"prompt": prompt})
         return self._clean_sql(raw_sql)
 
     @staticmethod
@@ -289,6 +285,17 @@ class BIAgent:
             reason = stripped.split(":", 1)[1].strip() if ":" in stripped else ""
             return reason or "The question cannot be answered from this dataset."
         return None
+
+    @staticmethod
+    def _no_answer_result(reason: str) -> dict[str, Any]:
+        """Shared shape for a NO_ANSWER result, returned before or after repair."""
+        return {
+            "sql": None,
+            "results": [],
+            "confidence_score": 0.0,
+            "visualization_suggestion": "table",
+            "no_answer": reason,
+        }
 
     # How many sample values to show the LLM per column. Sample values help the
     # model pick correct value literals (e.g. that status ∈ {'shipped','pending'})

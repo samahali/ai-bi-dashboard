@@ -49,10 +49,12 @@ class DatasetResponse(BaseModel):
 
 class DatasetPreviewResponse(BaseModel):
     id: int
+    table: str | None = None
     columns: list[str]
     data: list[list[Any]]
     row_count: int
     total_rows: int
+    offset: int = 0
 
 
 class PaginationMeta(BaseModel):

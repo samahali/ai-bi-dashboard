@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.dataset import DatasetPreviewResponse, DatasetResponse, DatasetUpdate, PaginatedDatasets
+from app.schemas.dataset import (
+    DatasetPreviewResponse,
+    DatasetResponse,
+    DatasetUpdate,
+    PaginatedDatasets,
+)
 from app.services.dataset_service import DatasetService
 
 router = APIRouter()
@@ -39,10 +44,14 @@ async def get_dataset(
 async def preview_dataset(
     dataset_id: int,
     rows: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    table: str | None = Query(None, max_length=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await DatasetService(db).preview_dataset(dataset_id, current_user.id, rows)
+    return await DatasetService(db).preview_dataset(
+        dataset_id, current_user.id, rows, offset, table
+    )
 
 
 @router.put("/{dataset_id}", response_model=DatasetResponse)
