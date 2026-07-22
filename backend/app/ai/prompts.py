@@ -47,8 +47,9 @@ def build_text_to_sql_prompt(
       with its columns/types/nullability/sample values (see
       BIAgent._format_tables_schema).
     - `relationships` are heuristically-detected LIKELY join relationships
-      (populated in a later phase). When empty, the prompt explicitly forbids
-      inventing joins.
+      (see utils/relationships.py — normalized shared id-like column names
+      across tables). When empty, the prompt explicitly forbids inventing
+      joins.
 
     Prompt-injection hardening (defense in depth — the DuckDB executor's
     hardened config and sqlglot validation are the real guarantees): the
@@ -57,23 +58,13 @@ def build_text_to_sql_prompt(
     a user cannot close the block early and inject trailing instructions.
     """
     sanitized_question = question.replace("<<<", "").replace(">>>", "").strip()
-
-    if relationships:
-        rel_lines = "\n".join(
-            f"- {r['from_table']}.{r['column']} = {r['to_table']}.{r['column']} "
-            f"(likely, confidence {r.get('confidence', 0):.2f})"
-            for r in relationships
-        )
-        relationships_block = (
-            "LIKELY RELATIONSHIPS (use ONLY these for JOINs; they are "
-            "heuristic, not guaranteed):\n" + rel_lines
-        )
-    else:
-        relationships_block = (
-            "LIKELY RELATIONSHIPS: none detected. Do NOT invent JOIN "
-            "conditions — query a single table unless the question clearly "
-            "spans tables AND a relationship is listed here."
-        )
+    relationships_block = (
+        _format_relationships_block(relationships)
+        if relationships
+        else "LIKELY RELATIONSHIPS: none detected. Do NOT invent JOIN "
+        "conditions — query a single table unless the question clearly "
+        "spans tables AND a relationship is listed here."
+    )
 
     return f"""You are an expert SQL analyst. Convert the natural language question to a valid DuckDB SQL query over the tables below.
 
@@ -108,3 +99,58 @@ EXAMPLES:
 <<<QUESTION>>>
 
 SQL:"""
+
+
+def build_repair_prompt(
+    question: str,
+    tables_schema: str,
+    relationships: list[dict] | None,
+    failed_sql: str,
+    error_message: str,
+) -> str:
+    """
+    One-shot SQL repair prompt: shows the model its own failed query and
+    DuckDB's exact error, and asks for a corrected query against the same
+    schema. Kept concise (no few-shot examples needed here — the failed query
+    itself is the most relevant example). Same injection hardening as the
+    main prompt: the question is delimited and stripped of delimiter chars.
+    """
+    sanitized_question = question.replace("<<<", "").replace(">>>", "").strip()
+    relationships_block = (
+        _format_relationships_block(relationships)
+        if relationships
+        else "LIKELY RELATIONSHIPS: none detected. Do NOT invent JOIN conditions."
+    )
+
+    return f"""Your previous SQL query failed to execute. Fix it using the schema and error below. Return ONLY the corrected SQL (or a NO_ANSWER line if it truly cannot be answered) — no explanation, no markdown.
+
+TABLES:
+{tables_schema}
+
+{relationships_block}
+
+FAILED SQL:
+{failed_sql}
+
+ERROR:
+{error_message}
+
+Common causes: a column or table name not in the schema above, or a JOIN on a
+column not listed in LIKELY RELATIONSHIPS. Use ONLY the tables/columns listed
+above. If the question cannot be answered from this schema, return exactly:
+-- NO_ANSWER: <brief reason>
+
+<<<QUESTION>>>
+{sanitized_question}
+<<<QUESTION>>>
+
+SQL:"""
+
+
+def _format_relationships_block(relationships: list[dict]) -> str:
+    rel_lines = "\n".join(
+        f"- {r['from_table']}.{r['column']} = {r['to_table']}.{r.get('to_column', r['column'])} "
+        f"(likely, confidence {r.get('confidence', 0):.2f})"
+        for r in relationships
+    )
+    return "LIKELY RELATIONSHIPS (use ONLY these for JOINs):\n" + rel_lines

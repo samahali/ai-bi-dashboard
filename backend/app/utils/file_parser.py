@@ -19,6 +19,7 @@ from app.db.models import Dataset, Insight
 from app.db.session import AsyncSessionLocal
 from app.utils.identifiers import DEFAULT_TABLE_NAME, sanitize_table_names
 from app.utils.insight_generator import InsightGenerator
+from app.utils.relationships import detect_relationships
 
 logger = structlog.get_logger(__name__)
 
@@ -62,6 +63,7 @@ class FileParser:
                 dataset.column_count = len(primary_df.columns)
                 dataset.columns_metadata = tables_metadata[primary_name]["columns"]
                 dataset.tables_metadata = tables_metadata
+                dataset.table_relationships = detect_relationships(tables_metadata)
                 dataset.status = "ready"
 
                 await db.commit()
@@ -70,9 +72,13 @@ class FileParser:
                     dataset_id=dataset_id,
                     tables=len(named),
                     rows=len(primary_df),
+                    relationships=len(dataset.table_relationships),
                 )
 
-                await self._generate_insights(db, dataset_id, dataset.user_id, primary_df)
+                # Insights per table: {name: (original_name, df)} -> generate
+                # independently per sheet, tagged with its table name.
+                dataframes_by_table = {name: df for name, (_orig, df) in named.items()}
+                await self._generate_insights(db, dataset_id, dataset.user_id, dataframes_by_table)
 
                 from app.ai.rag_store import SchemaRAGStore
                 SchemaRAGStore().index_dataset_schema(dataset_id, tables_metadata)
@@ -88,25 +94,38 @@ class FileParser:
                     await db.commit()
 
     async def _generate_insights(
-        self, db: AsyncSession, dataset_id: int, user_id: int, df: pd.DataFrame
+        self, db: AsyncSession, dataset_id: int, user_id: int, dataframes_by_table: dict[str, pd.DataFrame]
     ) -> None:
         """
-        Run statistical insight detection and persist results.
+        Run statistical insight detection independently per table and persist
+        results, each tagged with the table it came from (via insight_metadata
+        — no schema change needed). CSV/JSON have exactly one table, so this
+        is identical to the pre-multi-table behavior for them.
+
         Failures here are logged but never fail the dataset itself — insights
         are a bonus on top of a successfully-parsed dataset, not a requirement.
+        A failure on one table's insights doesn't stop the others.
         """
-        try:
-            insight_dicts = InsightGenerator().generate(df)
-            for data in insight_dicts:
-                db.add(Insight(dataset_id=dataset_id, user_id=user_id, **data))
-            if insight_dicts:
-                await db.commit()
-                logger.info(
-                    "Insights generated", dataset_id=dataset_id, count=len(insight_dicts)
+        total = 0
+        for table_name, df in dataframes_by_table.items():
+            try:
+                insight_dicts = InsightGenerator().generate(df)
+                for data in insight_dicts:
+                    metadata = dict(data.get("insight_metadata") or {})
+                    metadata["table"] = table_name
+                    data = {**data, "insight_metadata": metadata}
+                    db.add(Insight(dataset_id=dataset_id, user_id=user_id, **data))
+                if insight_dicts:
+                    await db.commit()
+                    total += len(insight_dicts)
+            except Exception as exc:
+                logger.error(
+                    "Failed to generate insights for table",
+                    dataset_id=dataset_id, table=table_name, error=str(exc),
                 )
-        except Exception as exc:
-            logger.error("Failed to generate insights", dataset_id=dataset_id, error=str(exc))
-            await db.rollback()
+                await db.rollback()
+        if total:
+            logger.info("Insights generated", dataset_id=dataset_id, count=total)
 
     def _read_file(self, file_path: str, file_type: str) -> pd.DataFrame:
         """Read the primary (single, or first-sheet) table as one DataFrame.

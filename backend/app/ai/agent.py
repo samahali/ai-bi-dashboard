@@ -110,18 +110,18 @@ class BIAgent:
         # 2. Build the multi-table schema context. A dataset may contain
         # several tables (Excel sheets). `effective_tables_metadata` returns a
         # uniform {table: {columns: {...}}} view, synthesizing a single "data"
-        # table for CSV/JSON and pre-multi-table datasets. RAG column filtering
-        # is applied per table (Phase 1 makes retrieval itself table-aware; for
-        # now it uses the primary table's columns as before).
+        # table for CSV/JSON and pre-multi-table datasets.
         from app.ai.rag_store import SchemaRAGStore
         from app.utils.dataset_tables import effective_tables_metadata
 
         tables = effective_tables_metadata(dataset.tables_metadata, dataset.columns_metadata)
         relevant_columns = SchemaRAGStore().retrieve_relevant_columns(dataset.id, question)
+        rag_truncated = relevant_columns is not None
         tables_schema = self._format_tables_schema(tables, relevant_columns)
+        relationships = dataset.table_relationships or []
 
         # 3. Generate SQL
-        sql = await self._generate_sql(question, tables_schema)
+        sql = await self._generate_sql(question, tables_schema, relationships)
         logger.info("SQL generated", dataset_id=dataset.id, sql=sql)
 
         # 3a. NO_ANSWER: the model signals it can't answer from the available
@@ -137,23 +137,46 @@ class BIAgent:
             }
 
         # 4. Execute SQL against the dataset's tables, scoped to the known
-        # table names so a hallucinated/injected table is rejected.
+        # table names so a hallucinated/injected table is rejected. If
+        # execution fails, give the model exactly one chance to repair the
+        # query using the actual error message before giving up — most
+        # failures are a wrong column/table name the model can self-correct
+        # once it sees DuckDB's specific complaint.
         from app.ai.sql_executor import DatasetSQLExecutor
         executor = DatasetSQLExecutor()
-        results = executor.execute(
-            sql, dataset.file_path, dataset.file_type, known_tables=list(tables.keys())
-        )
+        known_tables = list(tables.keys())
+        repaired = False
+        try:
+            results = executor.execute(sql, dataset.file_path, dataset.file_type, known_tables=known_tables)
+        except ValueError as exec_error:
+            logger.warning("SQL execution failed, attempting one repair", dataset_id=dataset.id, error=str(exec_error))
+            repaired = True
+            sql = await self._repair_sql(question, tables_schema, relationships, sql, str(exec_error))
+            no_answer = self._parse_no_answer(sql)
+            if no_answer is not None:
+                return {
+                    "sql": None,
+                    "results": [],
+                    "confidence_score": 0.0,
+                    "visualization_suggestion": "table",
+                    "no_answer": no_answer,
+                }
+            # Let a second failure propagate — only one repair attempt.
+            results = executor.execute(sql, dataset.file_path, dataset.file_type, known_tables=known_tables)
 
         # 5. Suggest visualization type
         viz_suggestion = self._suggest_visualization(results)
 
-        # 6. Confidence score — a heuristic label for the UI, not a
-        # calibrated ML confidence. 1.0: SQL generated on the primary
-        # provider (no fallback) and executed without error (we only get
-        # here if executor.execute() above didn't raise). 0.75: generation
-        # succeeded but only after falling back from Granite to OpenAI —
-        # still executed cleanly, but on the secondary provider.
-        confidence_score = 0.75 if self.used_fallback else 1.0
+        # 6. Confidence score — a heuristic label for the UI, not a calibrated
+        # ML confidence. Starts high and is reduced for each real risk signal
+        # observed on this specific answer; never reports 1.0 when any risk
+        # signal fired.
+        confidence_score = self._compute_confidence(
+            used_fallback=self.used_fallback,
+            rag_truncated=rag_truncated,
+            repaired=repaired,
+            row_count=len(results),
+        )
 
         return {
             "sql": sql,
@@ -162,7 +185,9 @@ class BIAgent:
             "visualization_suggestion": viz_suggestion,
         }
 
-    async def _generate_sql(self, question: str, tables_schema: str) -> str:
+    async def _generate_sql(
+        self, question: str, tables_schema: str, relationships: list[dict]
+    ) -> str:
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import PromptTemplate
 
@@ -178,9 +203,62 @@ class BIAgent:
             | StrOutputParser()
         )
 
-        prompt = build_text_to_sql_prompt(question=question, tables_schema=tables_schema)
+        prompt = build_text_to_sql_prompt(
+            question=question, tables_schema=tables_schema, relationships=relationships
+        )
         raw_sql = await chain.ainvoke({"prompt": prompt})
         return self._clean_sql(raw_sql)
+
+    async def _repair_sql(
+        self,
+        question: str,
+        tables_schema: str,
+        relationships: list[dict],
+        failed_sql: str,
+        error_message: str,
+    ) -> str:
+        """
+        One-shot repair: re-prompt with the failed SQL and DuckDB's exact error
+        so the model can self-correct (typically a wrong column/table name or
+        a syntax slip). Reuses the same chain/provider as the original
+        generation. Only ever called once per question (see process_question).
+        """
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.prompts import PromptTemplate
+
+        from app.ai.prompts import build_repair_prompt
+
+        chain = PromptTemplate.from_template("{prompt}") | self.llm | StrOutputParser()
+        prompt = build_repair_prompt(
+            question=question,
+            tables_schema=tables_schema,
+            relationships=relationships,
+            failed_sql=failed_sql,
+            error_message=error_message,
+        )
+        raw_sql = await chain.ainvoke({"prompt": prompt})
+        return self._clean_sql(raw_sql)
+
+    @staticmethod
+    def _compute_confidence(
+        *, used_fallback: bool, rag_truncated: bool, repaired: bool, row_count: int
+    ) -> float:
+        """
+        Compose a confidence score from real signals about THIS answer, rather
+        than a fixed constant. Each risk signal present lowers confidence;
+        never returns 1.0 if any signal fired. Floored so confidence never
+        reads as "no trust at all" for an answer that did execute successfully.
+        """
+        score = 1.0
+        if used_fallback:
+            score -= 0.15   # generation happened on the secondary provider
+        if rag_truncated:
+            score -= 0.10   # the LLM saw a RAG-narrowed schema, not the full one
+        if repaired:
+            score -= 0.20   # the first generated query failed and needed a retry
+        if row_count == 0:
+            score -= 0.15   # a correct-looking query with zero rows is often a mismatch
+        return round(max(score, 0.4), 2)
 
     @staticmethod
     def _clean_sql(raw: str) -> str:
