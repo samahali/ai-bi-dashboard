@@ -42,6 +42,7 @@ Thumbs.db
 
 # Internal task-tracking scratch notes — not project deliverables
 .tasks/
+.claude/plans/
 
 # LibreOffice lock files
 .~lock.*#
