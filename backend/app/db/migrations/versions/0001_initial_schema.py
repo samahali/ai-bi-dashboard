@@ -9,7 +9,7 @@ the time Alembic was introduced to this project. Previously the app relied
 entirely on Base.metadata.create_all() at every boot (see app/db/session.py)
 with no versioned migration history. This revision brings any existing
 create_all()-provisioned database in line with Alembic's version table via
-`alembic stamp 0001` (see docs/DEVELOPMENT.md), or provisions a fresh
+`alembic stamp 0001` (see docs/GUIDE.md), or provisions a fresh
 database identically via `alembic upgrade head`.
 """
 from typing import Sequence, Union

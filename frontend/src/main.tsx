@@ -1,10 +1,19 @@
-import React from 'react'
+import React, { Suspense, lazy } from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
+
+// Lazy + dev-only: keeps the devtools bundle out of the production build
+// entirely (import() is never even called when import.meta.env.PROD).
+const ReactQueryDevtools = import.meta.env.PROD
+  ? () => null
+  : lazy(() =>
+      import('@tanstack/react-query-devtools').then((m) => ({
+        default: m.ReactQueryDevtools,
+      }))
+    )
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,7 +38,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           },
         }}
       />
-      <ReactQueryDevtools initialIsOpen={false} />
+      <Suspense fallback={null}>
+        <ReactQueryDevtools initialIsOpen={false} />
+      </Suspense>
     </QueryClientProvider>
   </React.StrictMode>
 )

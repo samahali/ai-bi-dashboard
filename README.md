@@ -103,11 +103,9 @@ bi-dashboard-ai/
 
 ## 📖 Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [API Reference](docs/API.md)
-- [Security](docs/SECURITY.md)
-- [Development Guide](docs/DEVELOPMENT.md)
-- [Deployment](docs/DEPLOYMENT.md)
+- [Architecture & API Reference](docs/ARCHITECTURE.md) — system design, a diagram of how the pieces fit together, the text-to-SQL pipeline, and the full API reference
+- [Security](docs/SECURITY.md) — auth, the SQL-injection defense layers, file upload safety, CORS, rate limiting, secrets
+- [Development & Deployment Guide](docs/GUIDE.md) — local setup, running tests, adding a provider/file type, and production deployment
 
 ---
 

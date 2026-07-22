@@ -8,15 +8,13 @@ DuckDB is ideal here because:
 - Fast for analytical queries
 - No data duplication needed
 """
-import re
-from typing import Any
-
 import duckdb
+import re
 import sqlglot
 import structlog
-from sqlglot import exp
-
 from app.utils.file_parser import FileParser
+from sqlglot import exp
+from typing import Any
 
 logger = structlog.get_logger(__name__)
 

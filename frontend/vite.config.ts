@@ -23,4 +23,23 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // recharts' own chunk (~565kB) is a single cohesive vendor library,
+    // cached independently from the app bundle and only fetched on pages
+    // that render a chart — raising the warning threshold past its size
+    // avoids a permanent false-positive build warning for a chunk that's
+    // already isolated as intended.
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        // recharts (and its d3 internals) is the single largest dependency
+        // and is only needed on pages that render a chart — split it into
+        // its own chunk so it's fetched in parallel / cached separately
+        // from the main app bundle instead of inflating every page load.
+        manualChunks: {
+          recharts: ['recharts'],
+        },
+      },
+    },
+  },
 })

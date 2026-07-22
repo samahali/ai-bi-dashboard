@@ -35,7 +35,7 @@ async def lifespan(app: FastAPI):
     # Dev/test: create tables directly from ORM metadata for convenience.
     # Production: schema is managed by versioned Alembic migrations, run
     # explicitly before the app starts (see docker-compose.yml / deploy
-    # step and docs/DEPLOYMENT.md) — never auto-created here.
+    # step and docs/GUIDE.md) — never auto-created here.
     if settings.app_env != "production":
         await create_tables()
         logger.info("Database ready (create_all, dev/test)")

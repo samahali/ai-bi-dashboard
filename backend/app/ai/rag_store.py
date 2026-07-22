@@ -20,17 +20,15 @@ transformers model download) — the column corpus is small, structured text
 (names/types/sample values, not prose), where a hashing vectorizer is a
 reasonable fit and keeps the app free of a ~80MB first-query model download.
 """
+import chromadb
 import contextlib
 import hashlib
 import math
+import structlog
+from app.config import settings
+from chromadb import Documents, EmbeddingFunction, Embeddings
 from collections import Counter
 from typing import Any
-
-import chromadb
-import structlog
-from chromadb import Documents, EmbeddingFunction, Embeddings
-
-from app.config import settings
 
 logger = structlog.get_logger(__name__)
 

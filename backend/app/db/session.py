@@ -33,7 +33,7 @@ async def create_tables() -> None:
 
     Dev/test convenience only — skips the Alembic revision history entirely,
     so it must never run in production (that's what `alembic upgrade head`
-    is for; see docs/DEVELOPMENT.md and docs/DEPLOYMENT.md). Callers should
+    is for; see docs/GUIDE.md). Callers should
     gate this on settings.is_development / app_env == "test".
     """
     async with engine.begin() as conn:
