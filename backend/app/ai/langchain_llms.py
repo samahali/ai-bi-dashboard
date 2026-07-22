@@ -19,7 +19,8 @@ from langchain_core.language_models.llms import LLM
 class WatsonxGraniteLLM(LLM):
     """Minimal LangChain LLM adapter around an ibm-watsonx-ai Model instance."""
 
-    model: Any  # ibm_watsonx_ai.foundation_models.Model — untyped to avoid a hard import here
+    # ibm_watsonx_ai.foundation_models.Model — untyped to avoid a hard import here
+    model: Any
 
     @property
     def _llm_type(self) -> str:

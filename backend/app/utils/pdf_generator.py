@@ -140,7 +140,7 @@ class PDFGenerator:
             return []
         headers = list(results[0].keys())
         rows = [[str(row.get(h, "")) for h in headers] for row in results[:50]]
-        return [headers] + rows
+        return [headers, *rows]
 
     @staticmethod
     def _table_style() -> TableStyle:

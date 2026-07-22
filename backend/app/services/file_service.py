@@ -43,8 +43,9 @@ class FileService:
         # ── Validate file type ──────────────────────────────────
         ext = Path(original_name).suffix.lstrip(".").lower()
         if ext not in settings.allowed_file_types_list:
+            allowed = ", ".join(settings.allowed_file_types_list)
             raise InvalidFileTypeError(
-                f"File type '{ext}' not allowed. Allowed: {', '.join(settings.allowed_file_types_list)}"
+                f"File type '{ext}' not allowed. Allowed: {allowed}"
             )
         # Internal file_type used by the parser (xlsx → excel). Kept separate
         # from `ext`, which stays the real on-disk extension for the saved file.

@@ -154,7 +154,8 @@ class SchemaRAGStore:
                     # of the same name in different sheets never collide.
                     doc = f"{table_name}.{col} ({col_type})"
                     if samples:
-                        doc += f" — example values: {', '.join(str(s) for s in samples[:5])}"
+                        shown = ", ".join(str(s) for s in samples[:5])
+                        doc += f" — example values: {shown}"
                     ids.append(f"{table_name}.{col}")
                     documents.append(doc)
                     metadatas.append(

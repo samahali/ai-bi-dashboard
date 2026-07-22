@@ -308,7 +308,10 @@ class Insight(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Insight id={self.id} type={self.insight_type!r} severity={self.severity!r}>"
+        return (
+            f"<Insight id={self.id} type={self.insight_type!r} "
+            f"severity={self.severity!r}>"
+        )
 
 
 # ──────────────────────────────────────────────────────────────────

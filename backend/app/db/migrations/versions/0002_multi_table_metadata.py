@@ -16,8 +16,8 @@ pre-existing datasets continue to work unchanged.
 
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision: str = "0002"
 down_revision: Union[str, None] = "0001"

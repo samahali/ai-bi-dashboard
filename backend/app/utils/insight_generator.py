@@ -122,7 +122,8 @@ class InsightGenerator:
                         f"The distribution of '{col}' is heavily skewed "
                         f"({direction}, skewness={skewness:.2f}), meaning most values "
                         f"cluster {'low' if direction == 'right' else 'high'} with a "
-                        f"long tail toward {'high' if direction == 'right' else 'low'} values."
+                        f"long tail toward "
+                        f"{'high' if direction == 'right' else 'low'} values."
                     ),
                     "affected_columns": [str(col)],
                     "severity": "low",

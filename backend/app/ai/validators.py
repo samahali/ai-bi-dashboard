@@ -6,7 +6,6 @@ Prevents users from hijacking the LLM via crafted questions.
 import re
 from typing import Tuple
 
-
 # Patterns that indicate prompt injection or SQL injection attempts.
 #
 # This is a best-effort FIRST layer only — a static blocklist is inherently

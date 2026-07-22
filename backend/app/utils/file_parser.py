@@ -205,9 +205,10 @@ class FileParser:
         """
         Build the per-table metadata blob stored on `Dataset.tables_metadata`
         from already-read frames (no file I/O here):
-        ``{table_name: {original_name, row_count, column_count, columns, sheet_index}}``.
-        `columns` reuses the exact shape produced by `_infer_metadata`, so the
-        primary table's `columns` is drop-in compatible with `columns_metadata`.
+        ``{table_name: {original_name, row_count, column_count, columns,
+        sheet_index}}``. `columns` reuses the exact shape produced by
+        `_infer_metadata`, so the primary table's `columns` is drop-in
+        compatible with `columns_metadata`.
         """
         tables: dict[str, Any] = {}
         for index, (name, (original_name, df)) in enumerate(named.items()):

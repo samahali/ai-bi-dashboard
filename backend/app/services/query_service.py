@@ -52,7 +52,7 @@ class QueryService:
         return QueryStatusResponse(
             id=query.id,
             status="pending",
-            message="Your question is being processed. Poll GET /queries/{id} for results.",
+            message="Processing your question. Poll GET /queries/{id} for results.",
         )
 
     async def get_query(self, query_id: int, user_id: int) -> QueryResponse:
