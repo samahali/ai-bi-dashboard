@@ -248,20 +248,22 @@ class BIAgent:
             -- Table: customers
               ...
 
-        `relevant_columns` (RAG, Phase 1) is applied per table when present:
-        a table keeps only its retrieved columns, but a table with ANY retrieved
-        column keeps ALL its columns so join keys are never filtered away. When
-        None (RAG unavailable / small schema), every column of every table is
-        shown.
+        `relevant_columns` (RAG) are table-qualified names (`"table.column"`).
+        Filtering is coarsened to table granularity: a table with ANY retrieved
+        column keeps ALL of its columns (so join keys are never filtered away);
+        a table with none of its columns retrieved is dropped. When None (RAG
+        unavailable / small schema), every column of every table is shown.
         """
         relevant = set(relevant_columns) if relevant_columns else None
         blocks = []
         for table_name, table_meta in tables.items():
             columns = table_meta.get("columns", {})
             # When RAG retrieved columns, keep a table only if at least one of
-            # its columns was retrieved (and then keep ALL its columns so join
-            # keys are never filtered away). Without retrieval, keep everything.
-            if relevant is not None and not any(col in relevant for col in columns):
+            # its qualified columns ("table.col") was retrieved; then keep ALL
+            # its columns. Without retrieval, keep everything.
+            if relevant is not None and not any(
+                f"{table_name}.{col}" in relevant for col in columns
+            ):
                 continue
             blocks.append(f"-- Table: {table_name}\n{cls._format_schema(columns)}")
         # If per-table filtering removed everything (retrieval mismatch), fall

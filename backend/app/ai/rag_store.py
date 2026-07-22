@@ -1,23 +1,24 @@
 """
 RAG (Retrieval-Augmented Generation) schema store, backed by ChromaDB.
 
-Each dataset's columns are embedded as individual documents (name + type +
-sample values) when the file finishes parsing. At query time, the user's
-question is embedded and the top-K most relevant columns are retrieved and
-injected into the SQL-generation prompt — instead of always dumping the
-dataset's full column list.
+Each dataset's columns are embedded as individual documents (table + name +
+type + sample values) when the file finishes parsing. At query time, the
+user's question is embedded and the most relevant columns (across ALL of the
+dataset's tables) are retrieved and used to trim the schema injected into the
+SQL-generation prompt — instead of always dumping every column of every table.
 
-This scales the same way regardless of column count: a 200-column dataset
-sends the LLM only the ~15 columns actually relevant to the question, not
-the whole schema. Falls back to the full schema (behavior before this
-module existed) if ChromaDB is unreachable, since retrieval quality should
-never be a hard dependency for the core text-to-SQL feature.
+A dataset may contain multiple tables (Excel sheets). All of a dataset's
+columns live in ONE collection, each document tagged with its table name, so a
+single similarity query spans every table (needed to surface join keys and
+answer cross-table questions). Retrieved columns are returned table-qualified
+(`"table.column"`). Falls back to the full schema (behavior before this module
+existed) if ChromaDB is unreachable — retrieval quality is never a hard
+dependency for the core text-to-SQL feature.
 
 Uses a lightweight deterministic hashing embedding (no ONNX/sentence-
 transformers model download) — the column corpus is small, structured text
 (names/types/sample values, not prose), where a hashing vectorizer is a
-reasonable fit and keeps the app free of a ~80MB first-query model
-download and any dependency on external model registries.
+reasonable fit and keeps the app free of a ~80MB first-query model download.
 """
 import contextlib
 import hashlib
@@ -34,7 +35,20 @@ from app.config import settings
 logger = structlog.get_logger(__name__)
 
 EMBEDDING_DIMENSIONS = 256
-TOP_K_COLUMNS = 15
+
+# Dynamic Top-K: retrieve a fraction of the total columns, bounded. Small
+# schemas retrieve few (min); large schemas retrieve more (capped so the prompt
+# stays bounded). See _dynamic_top_k.
+TOP_K_RATIO = 0.5
+TOP_K_MIN = 8
+TOP_K_MAX = 30
+
+
+def _dynamic_top_k(total_columns: int) -> int:
+    """Columns to retrieve given the dataset's total column count, bounded to
+    [TOP_K_MIN, TOP_K_MAX]."""
+    scaled = math.ceil(total_columns * TOP_K_RATIO)
+    return max(TOP_K_MIN, min(scaled, TOP_K_MAX))
 
 # Module-level singleton ChromaDB client — mirrors the engine/AsyncSessionLocal
 # pattern in db/session.py. Each of SchemaRAGStore's 3 call sites (agent.py,
@@ -101,62 +115,89 @@ class SchemaRAGStore:
     def _collection_name(dataset_id: int) -> str:
         return f"dataset_{dataset_id}_schema"
 
-    def index_dataset_schema(self, dataset_id: int, columns_metadata: dict[str, Any]) -> None:
+    def index_dataset_schema(self, dataset_id: int, tables_metadata: dict[str, Any]) -> None:
         """
-        Embed each column of a dataset as a retrievable document.
-        Called after successful upload parsing. Best-effort: failures are
-        logged, not raised — RAG context is an enhancement, not a
-        requirement for text-to-SQL to function.
+        Embed every column of every table in a dataset as a retrievable,
+        table-tagged document. `tables_metadata` maps table_name → {columns:
+        {col: {type, nullable, sample_values}}, ...}. Called after successful
+        parsing. Best-effort: failures are logged, not raised — RAG context is
+        an enhancement, not a requirement for text-to-SQL.
         """
-        if not columns_metadata:
+        if not tables_metadata:
             return
         try:
             client = self._get_client()
             # Drop and recreate so re-parsing a dataset never leaves stale
-            # column documents behind (e.g. a column that got renamed/removed).
+            # documents behind (e.g. a renamed column or sheet).
             name = self._collection_name(dataset_id)
             with contextlib.suppress(Exception):
                 client.delete_collection(name)
             collection = client.create_collection(name, embedding_function=self._embedding_fn)
 
             ids, documents, metadatas = [], [], []
-            for col, meta in columns_metadata.items():
-                col_type = meta.get("type", "string")
-                samples = meta.get("sample_values", [])
-                doc = f"{col} ({col_type})"
-                if samples:
-                    doc += f" — example values: {', '.join(str(s) for s in samples[:5])}"
-                ids.append(col)
-                documents.append(doc)
-                metadatas.append({
-                    "column": col,
-                    "type": col_type,
-                    "nullable": bool(meta.get("nullable", False)),
-                })
+            for table_name, table_meta in tables_metadata.items():
+                for col, meta in (table_meta.get("columns") or {}).items():
+                    col_type = meta.get("type", "string")
+                    samples = meta.get("sample_values", [])
+                    # Include the table name in the document so retrieval can
+                    # match on table intent too, and qualify the id so columns
+                    # of the same name in different sheets never collide.
+                    doc = f"{table_name}.{col} ({col_type})"
+                    if samples:
+                        doc += f" — example values: {', '.join(str(s) for s in samples[:5])}"
+                    ids.append(f"{table_name}.{col}")
+                    documents.append(doc)
+                    metadatas.append({
+                        "table": table_name,
+                        "column": col,
+                        "type": col_type,
+                        "nullable": bool(meta.get("nullable", False)),
+                    })
 
-            collection.add(ids=ids, documents=documents, metadatas=metadatas)
-            logger.info("Indexed dataset schema in ChromaDB", dataset_id=dataset_id, columns=len(ids))
+            if ids:
+                collection.add(ids=ids, documents=documents, metadatas=metadatas)
+            logger.info(
+                "Indexed dataset schema in ChromaDB",
+                dataset_id=dataset_id, tables=len(tables_metadata), columns=len(ids),
+            )
         except Exception as exc:
             logger.warning("Failed to index dataset schema in ChromaDB", dataset_id=dataset_id, error=str(exc))
 
-    def retrieve_relevant_columns(
-        self, dataset_id: int, question: str, top_k: int = TOP_K_COLUMNS
-    ) -> list[str] | None:
+    def retrieve_relevant_columns(self, dataset_id: int, question: str) -> list[str] | None:
         """
-        Return the column names most relevant to `question`, or None if
-        retrieval isn't available (falls back to full schema upstream).
+        Return the table-qualified column names (`"table.column"`) most relevant
+        to `question`, or None if retrieval isn't available or the schema is
+        small enough that retrieval wouldn't narrow anything down (caller then
+        falls back to the full schema). Top-K scales with the dataset's total
+        column count (see _dynamic_top_k).
         """
         try:
             client = self._get_client()
             collection = client.get_collection(
                 self._collection_name(dataset_id), embedding_function=self._embedding_fn
             )
-            if collection.count() <= top_k:
-                # Small schema — retrieval adds no value, return everything.
+            total = collection.count()
+            top_k = _dynamic_top_k(total)
+            if total <= top_k:
+                # Small schema — retrieval adds no value, use the full schema.
                 return None
             result = collection.query(query_texts=[question], n_results=top_k)
             metadatas = result.get("metadatas") or [[]]
-            return [m["column"] for m in metadatas[0]]
+            # A collection indexed before table-tagging (older dataset) has no
+            # "table" key; skip those entries — the caller falls back to full
+            # schema if nothing qualified comes back.
+            qualified = [
+                f"{m['table']}.{m['column']}"
+                for m in metadatas[0]
+                if m.get("table") and m.get("column")
+            ]
+            if not qualified:
+                return None
+            logger.info(
+                "RAG retrieved columns",
+                dataset_id=dataset_id, total_columns=total, top_k=top_k, retrieved=len(qualified),
+            )
+            return qualified
         except Exception as exc:
             logger.warning("ChromaDB retrieval failed, falling back to full schema", dataset_id=dataset_id, error=str(exc))
             return None

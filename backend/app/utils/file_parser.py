@@ -75,7 +75,7 @@ class FileParser:
                 await self._generate_insights(db, dataset_id, dataset.user_id, primary_df)
 
                 from app.ai.rag_store import SchemaRAGStore
-                SchemaRAGStore().index_dataset_schema(dataset_id, dataset.columns_metadata)
+                SchemaRAGStore().index_dataset_schema(dataset_id, tables_metadata)
 
             except Exception as exc:
                 logger.error("Failed to parse dataset", dataset_id=dataset_id, error=str(exc))
