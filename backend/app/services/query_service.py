@@ -7,21 +7,23 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import DatasetNotReadyError
+from app.core import DatasetNotReadyError
 from app.db.models import Dataset, Query
 from app.db.session import AsyncSessionLocal
-from app.schemas.query import QueryCreate, QueryResponse, QueryStatusResponse
-from app.utils.background_tasks import track
-from app.utils.ownership import get_owned
+from app.schemas import QueryCreate, QueryResponse, QueryStatusResponse
+from app.utils import get_owned, track
 
 
 class QueryService:
+    """Orchestrates the Text-to-SQL AI flow: create, poll, and list queries."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     async def create_query(
         self, payload: QueryCreate, user_id: int
     ) -> QueryStatusResponse:
+        """Create a pending query and kick off AI processing in the background."""
         dataset = await get_owned(
             self.db,
             Dataset,
@@ -54,12 +56,14 @@ class QueryService:
         )
 
     async def get_query(self, query_id: int, user_id: int) -> QueryResponse:
+        """Fetch a single query the user owns."""
         query = await self._get_owned(query_id, user_id)
         return QueryResponse.model_validate(query)
 
     async def list_queries(
         self, user_id: int, dataset_id: int | None, page: int, limit: int
     ) -> list[QueryResponse]:
+        """List the user's queries, optionally filtered to one dataset."""
         stmt = select(Query).where(Query.user_id == user_id)
         if dataset_id:
             stmt = stmt.where(Query.dataset_id == dataset_id)
@@ -72,6 +76,7 @@ class QueryService:
         return [QueryResponse.model_validate(q) for q in result.scalars().all()]
 
     async def delete_query(self, query_id: int, user_id: int) -> None:
+        """Delete a query the user owns."""
         query = await self._get_owned(query_id, user_id)
         await self.db.delete(query)
         await self.db.commit()
@@ -85,7 +90,8 @@ class QueryService:
         may already be closed by the time this runs.
         """
         import time
-        from app.ai.agent import BIAgent
+
+        from app.ai import BIAgent
 
         start = time.perf_counter()
 
@@ -128,6 +134,7 @@ class QueryService:
                 await db.commit()
 
     async def _get_owned(self, query_id: int, user_id: int) -> Query:
+        """Fetch a Query row by id, scoped to `user_id` (404/403 via get_owned)."""
         return await get_owned(
             self.db, Query, query_id, user_id, not_found_msg="Query not found."
         )

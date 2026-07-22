@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.insight import InsightResponse
-from app.services.insight_service import InsightService
+from app.schemas import InsightResponse
+from app.services import InsightService
 
 router = APIRouter()
 
@@ -23,6 +23,7 @@ async def get_insights(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """List active (non-dismissed) insights for a dataset the user owns."""
     return await InsightService(db).get_insights(
         dataset_id=dataset_id,
         user_id=current_user.id,
@@ -38,4 +39,5 @@ async def dismiss_insight(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Mark an insight the current user owns as dismissed."""
     return await InsightService(db).dismiss(insight_id, current_user.id)

@@ -17,7 +17,7 @@ import sqlglot
 import structlog
 from sqlglot import exp
 
-from app.utils.file_parser import FileParser
+from app.utils import FileParser
 
 logger = structlog.get_logger(__name__)
 

@@ -7,12 +7,14 @@ import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.core.exceptions import AppError
+from app.core import AppError
 
 logger = structlog.get_logger(__name__)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    """Attach the AppError and catch-all exception handlers to `app`."""
+
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(

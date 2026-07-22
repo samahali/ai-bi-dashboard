@@ -7,17 +7,18 @@ from pathlib import Path
 
 import aiofiles
 from fastapi import UploadFile
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.exceptions import FileTooLargeError, InvalidFileTypeError
+from app.core import FileTooLargeError, InvalidFileTypeError
 from app.db.models import Dataset
-from app.schemas.dataset import DatasetResponse
-from app.utils.file_parser import FileParser
+from app.schemas import DatasetResponse
+from app.utils import FileParser
 
 
 class FileService:
+    """Validates, stores uploaded files, and triggers async dataset parsing."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
@@ -29,6 +30,8 @@ class FileService:
         is_public: bool,
         user_id: int,
     ) -> DatasetResponse:
+        """Validate and persist an uploaded file, create its Dataset row, and
+        kick off background parsing."""
         # ── Sanitize the client-supplied filename ───────────────
         # file.filename is fully attacker-controlled. Take only the basename
         # (Path.name drops any directory components, incl. traversal like
@@ -93,7 +96,7 @@ class FileService:
         # ── Trigger async parsing (fire-and-forget) ─────────────
         # Uses its own DB session since it outlives this request's session.
         # track() keeps a strong reference so the task can't be GC'd mid-run.
-        from app.utils.background_tasks import track
+        from app.utils import track
 
         track(FileParser().parse_and_index(dataset.id, str(file_path), file_type))
 

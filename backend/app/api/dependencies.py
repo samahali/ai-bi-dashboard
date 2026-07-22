@@ -7,8 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import decode_token
-from app.core.exceptions import UnauthorizedError
+from app.core import UnauthorizedError, decode_token
 from app.db.models import User
 from app.db.session import get_db
 
@@ -62,7 +61,7 @@ async def get_current_admin(
 ) -> User:
     """Require the authenticated user to be an admin."""
     if not current_user.is_admin:
-        from app.core.exceptions import ForbiddenError
+        from app.core import ForbiddenError
 
         raise ForbiddenError("Admin access required.")
     return current_user

@@ -11,6 +11,7 @@ from app.config import settings
 
 
 def hash_password(plain: str) -> str:
+    """Hash a plaintext password with bcrypt (truncated to bcrypt's 72-byte limit)."""
     if len(plain) > 72:
         plain = plain[:72]
     salt = bcrypt.gensalt(rounds=12)
@@ -18,6 +19,7 @@ def hash_password(plain: str) -> str:
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """Check a plaintext password against its bcrypt hash."""
     if len(plain) > 72:
         plain = plain[:72]
     return bcrypt.checkpw(plain.encode(), hashed.encode())

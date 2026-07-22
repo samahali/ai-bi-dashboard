@@ -8,6 +8,8 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class RegisterRequest(BaseModel):
+    """Request body for creating a new user account."""
+
     username: str = Field(..., min_length=3, max_length=50, pattern=r"^[a-zA-Z0-9_]+$")
     email: EmailStr
     password: str = Field(
@@ -31,11 +33,15 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
+    """Request body for username/password login."""
+
     username: str
     password: str
 
 
 class TokenResponse(BaseModel):
+    """Access/refresh token pair returned on successful login or refresh."""
+
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
@@ -43,6 +49,8 @@ class TokenResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Public-facing representation of a user account."""
+
     id: int
     username: str
     email: str
@@ -56,8 +64,12 @@ class UserResponse(BaseModel):
 
 
 class AuthResponse(TokenResponse):
+    """Token pair plus the authenticated user, returned on register/login."""
+
     user: UserResponse
 
 
 class RefreshRequest(BaseModel):
+    """Request body for exchanging a refresh token for a new access token."""
+
     refresh_token: str

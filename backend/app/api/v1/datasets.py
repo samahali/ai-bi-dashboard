@@ -8,13 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.dataset import (
+from app.schemas import (
     DatasetPreviewResponse,
     DatasetResponse,
     DatasetUpdate,
     PaginatedDatasets,
 )
-from app.services.dataset_service import DatasetService
+from app.services import DatasetService
 
 router = APIRouter()
 
@@ -27,6 +27,7 @@ async def list_datasets(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """List the current user's datasets, paginated and optionally name-filtered."""
     return await DatasetService(db).list_datasets(
         user_id=current_user.id, page=page, limit=limit, search=search
     )
@@ -38,6 +39,7 @@ async def get_dataset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Fetch a single dataset the current user owns."""
     return await DatasetService(db).get_dataset(dataset_id, current_user.id)
 
 
@@ -50,6 +52,7 @@ async def preview_dataset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Return a page of raw row data for a dataset (or one of its tables)."""
     return await DatasetService(db).preview_dataset(
         dataset_id, current_user.id, rows, offset, table
     )
@@ -62,6 +65,7 @@ async def update_dataset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Partially update a dataset's metadata."""
     return await DatasetService(db).update_dataset(dataset_id, current_user.id, payload)
 
 
@@ -71,4 +75,5 @@ async def delete_dataset(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Soft-delete a dataset the current user owns."""
     await DatasetService(db).delete_dataset(dataset_id, current_user.id)

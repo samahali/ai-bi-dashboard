@@ -18,7 +18,7 @@ from typing import TypeVar
 from sqlalchemy import ColumnExpressionArgument, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ForbiddenError, NotFoundError
+from app.core import ForbiddenError, NotFoundError
 
 ModelT = TypeVar("ModelT")
 

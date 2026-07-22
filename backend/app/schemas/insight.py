@@ -9,6 +9,8 @@ from pydantic import BaseModel
 
 
 class InsightResponse(BaseModel):
+    """Auto-generated insight (e.g. anomaly, trend) about a dataset."""
+
     id: int
     dataset_id: int
     insight_type: str

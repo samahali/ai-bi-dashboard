@@ -6,21 +6,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Query, Visualization
-from app.schemas.visualization import (
+from app.schemas import (
     VisualizationCreate,
     VisualizationResponse,
     VisualizationUpdate,
 )
-from app.utils.ownership import get_owned
+from app.utils import get_owned
 
 
 class VisualizationService:
+    """CRUD for saved chart visualizations attached to a query."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     async def create(
         self, payload: VisualizationCreate, user_id: int
     ) -> VisualizationResponse:
+        """Create a visualization for a query the user owns."""
         await get_owned(
             self.db, Query, payload.query_id, user_id, not_found_msg="Query not found."
         )
@@ -40,12 +43,14 @@ class VisualizationService:
         return VisualizationResponse.model_validate(viz)
 
     async def get(self, viz_id: int, user_id: int) -> VisualizationResponse:
+        """Fetch a single visualization the user owns."""
         viz = await self._get_owned(viz_id, user_id)
         return VisualizationResponse.model_validate(viz)
 
     async def list_for_query(
         self, query_id: int, user_id: int
     ) -> list[VisualizationResponse]:
+        """List all visualizations the user has saved for a given query."""
         # Verify query ownership first — a query the user doesn't own should
         # 404/403 the same way create() does, rather than silently returning
         # an empty list for someone else's query_id.
@@ -65,6 +70,7 @@ class VisualizationService:
     async def update(
         self, viz_id: int, user_id: int, payload: VisualizationUpdate
     ) -> VisualizationResponse:
+        """Partially update a visualization the user owns."""
         viz = await self._get_owned(viz_id, user_id)
         for field, value in payload.model_dump(exclude_none=True).items():
             setattr(viz, field, value)
@@ -73,11 +79,13 @@ class VisualizationService:
         return VisualizationResponse.model_validate(viz)
 
     async def delete(self, viz_id: int, user_id: int) -> None:
+        """Delete a visualization the user owns."""
         viz = await self._get_owned(viz_id, user_id)
         await self.db.delete(viz)
         await self.db.commit()
 
     async def _get_owned(self, viz_id: int, user_id: int) -> Visualization:
+        """Fetch a Visualization row by id, scoped to `user_id` (via get_owned)."""
         return await get_owned(
             self.db,
             Visualization,

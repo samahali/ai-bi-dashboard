@@ -18,9 +18,9 @@ from app.ai.rag_store import SchemaRAGStore
 from app.ai.sql_executor import DatasetSQLExecutor
 from app.ai.validators import PromptInjectionValidator
 from app.config import settings
-from app.core.exceptions import AIServiceError, PromptInjectionError
+from app.core import AIServiceError, PromptInjectionError
 from app.db.models import Dataset
-from app.utils.dataset_tables import effective_tables_metadata
+from app.utils import effective_tables_metadata
 
 logger = structlog.get_logger(__name__)
 

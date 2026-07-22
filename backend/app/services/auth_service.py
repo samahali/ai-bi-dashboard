@@ -8,16 +8,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.auth import (
+from app.core import (
+    ConflictError,
+    UnauthorizedError,
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_password,
     verify_password,
 )
-from app.core.exceptions import ConflictError, UnauthorizedError
 from app.db.models import RefreshToken, User
-from app.schemas.auth import (
+from app.schemas import (
     AuthResponse,
     LoginRequest,
     RegisterRequest,
@@ -27,10 +28,13 @@ from app.schemas.auth import (
 
 
 class AuthService:
+    """Handles registration, login, logout, and refresh-token exchange."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     async def register(self, payload: RegisterRequest) -> AuthResponse:
+        """Create a new user account and issue an initial token pair."""
         # Check uniqueness
         existing = await self.db.execute(
             select(User).where(
@@ -64,6 +68,7 @@ class AuthService:
         )
 
     async def login(self, payload: LoginRequest) -> AuthResponse:
+        """Verify credentials and issue a new access/refresh token pair."""
         result = await self.db.execute(
             select(User).where(
                 User.username == payload.username, User.is_active.is_(True)
@@ -91,6 +96,7 @@ class AuthService:
         )
 
     async def refresh(self, token: str) -> TokenResponse:
+        """Exchange a valid, non-revoked refresh token for a new access token."""
         try:
             payload = decode_token(token)
             if payload.get("type") != "refresh":
@@ -134,6 +140,7 @@ class AuthService:
         await self.db.commit()
 
     async def _store_refresh_token(self, user_id: int, token: str) -> None:
+        """Persist the hash (never the raw token) of an issued refresh token."""
         import hashlib
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()

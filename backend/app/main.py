@@ -24,11 +24,11 @@ from app.api.v1 import (
     visualizations,
 )
 from app.config import settings
-from app.core.rate_limit import limiter
+from app.core import limiter
 from app.db.session import create_tables
 from app.middleware.error_handler import register_exception_handlers
 from app.middleware.request_logger import RequestLoggingMiddleware
-from app.utils.logger import configure_logging
+from app.utils import configure_logging
 
 logger = structlog.get_logger(__name__)
 

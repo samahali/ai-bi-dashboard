@@ -8,21 +8,23 @@ from sqlalchemy import case, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.exceptions import NotFoundError
+from app.core import NotFoundError
 from app.db.models import Dataset, Insight, Query, Report
 from app.db.session import AsyncSessionLocal
-from app.schemas.report import ReportCreate, ReportResponse, ReportStatusResponse
-from app.utils.background_tasks import track
-from app.utils.ownership import get_owned
+from app.schemas import ReportCreate, ReportResponse, ReportStatusResponse
+from app.utils import get_owned, track
 
 
 class ReportService:
+    """Generates PDF reports from a dataset's queries and/or insights."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     async def create_report(
         self, payload: ReportCreate, user_id: int
     ) -> ReportStatusResponse:
+        """Create a pending report and kick off PDF generation in the background."""
         await get_owned(
             self.db,
             Dataset,
@@ -54,10 +56,12 @@ class ReportService:
         )
 
     async def get_report(self, report_id: int, user_id: int) -> ReportResponse:
+        """Fetch a single report the user owns."""
         report = await self._get_owned(report_id, user_id)
         return ReportResponse.model_validate(report)
 
     async def get_pdf_path(self, report_id: int, user_id: int) -> str:
+        """Return the on-disk PDF path for a report, bumping its download count."""
         report = await self._get_owned(report_id, user_id)
         if not report.pdf_path or not Path(report.pdf_path).exists():
             raise NotFoundError("PDF not yet generated. Check report status.")
@@ -66,6 +70,7 @@ class ReportService:
         return report.pdf_path
 
     async def list_reports(self, user_id: int) -> list[ReportResponse]:
+        """List all reports owned by the user, newest first."""
         result = await self.db.execute(
             select(Report)
             .where(Report.user_id == user_id)
@@ -74,6 +79,7 @@ class ReportService:
         return [ReportResponse.model_validate(r) for r in result.scalars().all()]
 
     async def delete_report(self, report_id: int, user_id: int) -> None:
+        """Delete a report the user owns and its PDF file, if any."""
         report = await self._get_owned(report_id, user_id)
         # Clean up PDF file if it exists
         if report.pdf_path:
@@ -89,7 +95,7 @@ class ReportService:
         Opens its own DB session since the request session that spawned it
         may already be closed by the time this runs.
         """
-        from app.utils.pdf_generator import PDFGenerator
+        from app.utils import PDFGenerator
 
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Report).where(Report.id == report_id))
@@ -170,6 +176,7 @@ class ReportService:
                 await db.commit()
 
     async def _get_owned(self, report_id: int, user_id: int) -> Report:
+        """Fetch a Report row by id, scoped to `user_id` (404/403 via get_owned)."""
         return await get_owned(
             self.db, Report, report_id, user_id, not_found_msg="Report not found."
         )

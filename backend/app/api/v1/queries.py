@@ -7,11 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_current_user
 from app.config import settings
-from app.core.rate_limit import limiter
+from app.core import limiter
 from app.db.models import User
 from app.db.session import get_db
-from app.schemas.query import QueryCreate, QueryResponse, QueryStatusResponse
-from app.services.query_service import QueryService
+from app.schemas import QueryCreate, QueryResponse, QueryStatusResponse
+from app.services import QueryService
 
 router = APIRouter()
 
@@ -37,6 +37,7 @@ async def get_query(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Fetch a single query (including status, SQL, and results) the user owns."""
     return await QueryService(db).get_query(query_id, current_user.id)
 
 
@@ -48,6 +49,7 @@ async def list_queries(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """List the current user's queries, optionally filtered to one dataset."""
     return await QueryService(db).list_queries(current_user.id, dataset_id, page, limit)
 
 
@@ -57,4 +59,5 @@ async def delete_query(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """Delete a query the current user owns."""
     await QueryService(db).delete_query(query_id, current_user.id)

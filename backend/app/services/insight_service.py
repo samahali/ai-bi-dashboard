@@ -8,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Dataset, Insight
-from app.schemas.insight import InsightResponse
-from app.utils.ownership import get_owned
+from app.schemas import InsightResponse
+from app.utils import get_owned
 
 
 class InsightService:
+    """Fetches and manages AI-detected insights for a dataset."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
@@ -24,6 +26,7 @@ class InsightService:
         severity: str | None,
         limit: int,
     ) -> list[InsightResponse]:
+        """List active (non-dismissed) insights for a dataset the user owns."""
         # Verify dataset access
         await get_owned(
             self.db,
@@ -48,6 +51,7 @@ class InsightService:
         return [InsightResponse.model_validate(i) for i in result.scalars().all()]
 
     async def dismiss(self, insight_id: int, user_id: int) -> InsightResponse:
+        """Mark an insight the user owns as dismissed."""
         insight = await get_owned(
             self.db, Insight, insight_id, user_id, not_found_msg="Insight not found."
         )

@@ -3,29 +3,31 @@ Dataset service — CRUD and preview operations.
 """
 
 import math
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Dataset
-from app.schemas.dataset import (
+from app.schemas import (
     DatasetPreviewResponse,
     DatasetResponse,
     DatasetUpdate,
     PaginatedDatasets,
     PaginationMeta,
 )
-from app.utils.file_parser import FileParser
-from app.utils.identifiers import DEFAULT_TABLE_NAME
-from app.utils.ownership import get_owned
+from app.utils import DEFAULT_TABLE_NAME, FileParser, get_owned
 
 
 class DatasetService:
+    """CRUD and preview operations for datasets."""
+
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
     async def list_datasets(
         self, user_id: int, page: int, limit: int, search: str | None
     ) -> PaginatedDatasets:
+        """List the user's non-deleted datasets, paginated and name-filterable."""
         query = select(Dataset).where(
             Dataset.user_id == user_id, Dataset.deleted_at.is_(None)
         )
@@ -56,6 +58,7 @@ class DatasetService:
         )
 
     async def get_dataset(self, dataset_id: int, user_id: int) -> DatasetResponse:
+        """Fetch a single dataset the user owns."""
         dataset = await self._get_owned(dataset_id, user_id)
         return DatasetResponse.model_validate(dataset)
 
@@ -111,6 +114,7 @@ class DatasetService:
     async def update_dataset(
         self, dataset_id: int, user_id: int, payload: DatasetUpdate
     ) -> DatasetResponse:
+        """Partially update a dataset's metadata (name/description/is_public)."""
         dataset = await self._get_owned(dataset_id, user_id)
         for field, value in payload.model_dump(exclude_none=True).items():
             setattr(dataset, field, value)
@@ -119,17 +123,19 @@ class DatasetService:
         return DatasetResponse.model_validate(dataset)
 
     async def delete_dataset(self, dataset_id: int, user_id: int) -> None:
+        """Soft-delete a dataset the user owns and remove its indexed RAG schema."""
         from datetime import datetime, timezone
 
         dataset = await self._get_owned(dataset_id, user_id)
         dataset.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
 
-        from app.ai.rag_store import SchemaRAGStore
+        from app.ai import SchemaRAGStore
 
         SchemaRAGStore().delete_dataset_schema(dataset_id)
 
     async def _get_owned(self, dataset_id: int, user_id: int) -> Dataset:
+        """Fetch a non-deleted Dataset row by id, scoped to `user_id`."""
         return await get_owned(
             self.db,
             Dataset,
