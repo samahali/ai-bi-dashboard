@@ -4,10 +4,10 @@ Dataset service — CRUD and preview operations.
 
 import math
 
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Dataset
+from app.repositories import DatasetRepository
 from app.schemas import (
     DatasetPreviewResponse,
     DatasetResponse,
@@ -23,29 +23,13 @@ class DatasetService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = DatasetRepository(db)
 
     async def list_datasets(
         self, user_id: int, page: int, limit: int, search: str | None
     ) -> PaginatedDatasets:
         """List the user's non-deleted datasets, paginated and name-filterable."""
-        query = select(Dataset).where(
-            Dataset.user_id == user_id, Dataset.deleted_at.is_(None)
-        )
-        if search:
-            query = query.where(Dataset.name.ilike(f"%{search}%"))
-
-        total_result = await self.db.execute(
-            select(func.count()).select_from(query.subquery())
-        )
-        total = total_result.scalar_one()
-
-        query = (
-            query.order_by(Dataset.created_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
-        result = await self.db.execute(query)
-        datasets = result.scalars().all()
+        datasets, total = await self.repo.list_paginated(user_id, page, limit, search)
 
         return PaginatedDatasets(
             data=[DatasetResponse.model_validate(d) for d in datasets],

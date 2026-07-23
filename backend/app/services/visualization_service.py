@@ -2,10 +2,10 @@
 Visualization service.
 """
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Query, Visualization
+from app.repositories import VisualizationRepository
 from app.schemas import (
     VisualizationCreate,
     VisualizationResponse,
@@ -19,6 +19,7 @@ class VisualizationService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = VisualizationRepository(db)
 
     async def create(
         self, payload: VisualizationCreate, user_id: int
@@ -28,7 +29,7 @@ class VisualizationService:
             self.db, Query, payload.query_id, user_id, not_found_msg="Query not found."
         )
 
-        viz = Visualization(
+        viz = self.repo.create(
             query_id=payload.query_id,
             user_id=user_id,
             chart_type=payload.chart_type,
@@ -37,7 +38,6 @@ class VisualizationService:
             y_axis=payload.y_axis,
             config=payload.config,
         )
-        self.db.add(viz)
         await self.db.commit()
         await self.db.refresh(viz)
         return VisualizationResponse.model_validate(viz)
@@ -58,14 +58,8 @@ class VisualizationService:
             self.db, Query, query_id, user_id, not_found_msg="Query not found."
         )
 
-        viz_result = await self.db.execute(
-            select(Visualization)
-            .where(Visualization.query_id == query_id, Visualization.user_id == user_id)
-            .order_by(Visualization.created_at.desc())
-        )
-        return [
-            VisualizationResponse.model_validate(v) for v in viz_result.scalars().all()
-        ]
+        vizzes = await self.repo.list_for_query(query_id, user_id)
+        return [VisualizationResponse.model_validate(v) for v in vizzes]
 
     async def update(
         self, viz_id: int, user_id: int, payload: VisualizationUpdate

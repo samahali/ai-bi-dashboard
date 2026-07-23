@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core import DatasetNotReadyError
 from app.db.models import Dataset, Query
 from app.db.session import AsyncSessionLocal
+from app.repositories import QueryRepository
 from app.schemas import QueryCreate, QueryResponse, QueryStatusResponse
 from app.utils import get_owned, track
 
@@ -19,6 +20,7 @@ class QueryService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = QueryRepository(db)
 
     async def create_query(
         self, payload: QueryCreate, user_id: int
@@ -35,14 +37,13 @@ class QueryService:
         if dataset.status != "ready":
             raise DatasetNotReadyError()
 
-        query = Query(
+        query = self.repo.create(
             user_id=user_id,
             dataset_id=payload.dataset_id,
             question=payload.question,
             status="pending",
             ai_model_used=payload.ai_model,
         )
-        self.db.add(query)
         await self.db.commit()
         await self.db.refresh(query)
 
@@ -64,16 +65,8 @@ class QueryService:
         self, user_id: int, dataset_id: int | None, page: int, limit: int
     ) -> list[QueryResponse]:
         """List the user's queries, optionally filtered to one dataset."""
-        stmt = select(Query).where(Query.user_id == user_id)
-        if dataset_id:
-            stmt = stmt.where(Query.dataset_id == dataset_id)
-        stmt = (
-            stmt.order_by(Query.created_at.desc())
-            .offset((page - 1) * limit)
-            .limit(limit)
-        )
-        result = await self.db.execute(stmt)
-        return [QueryResponse.model_validate(q) for q in result.scalars().all()]
+        queries = await self.repo.list_for_user(user_id, dataset_id, page, limit)
+        return [QueryResponse.model_validate(q) for q in queries]
 
     async def delete_query(self, query_id: int, user_id: int) -> None:
         """Delete a query the user owns."""

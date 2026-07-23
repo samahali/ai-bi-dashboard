@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core import FileTooLargeError, InvalidFileTypeError
-from app.db.models import Dataset
+from app.repositories import FileRepository
 from app.schemas import DatasetResponse
 from app.utils import FileParser
 
@@ -21,6 +21,7 @@ class FileService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = FileRepository(db)
 
     async def upload_and_create_dataset(
         self,
@@ -79,7 +80,7 @@ class FileService:
             await f.write(content)
 
         # ── Create Dataset record (status = processing) ─────────
-        dataset = Dataset(
+        dataset = self.repo.create_dataset(
             user_id=user_id,
             name=name,
             description=description,

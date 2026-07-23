@@ -4,10 +4,10 @@ Insight service — fetches and manages AI-detected insights.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Dataset, Insight
+from app.repositories import InsightRepository
 from app.schemas import InsightResponse
 from app.utils import get_owned
 
@@ -17,6 +17,7 @@ class InsightService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = InsightRepository(db)
 
     async def get_insights(
         self,
@@ -37,18 +38,10 @@ class InsightService:
             not_found_msg="Dataset not found.",
         )
 
-        stmt = select(Insight).where(
-            Insight.dataset_id == dataset_id,
-            Insight.is_dismissed.is_(False),
+        insights = await self.repo.list_active(
+            dataset_id, insight_type, severity, limit
         )
-        if insight_type:
-            stmt = stmt.where(Insight.insight_type == insight_type)
-        if severity:
-            stmt = stmt.where(Insight.severity == severity)
-
-        stmt = stmt.order_by(Insight.created_at.desc()).limit(limit)
-        result = await self.db.execute(stmt)
-        return [InsightResponse.model_validate(i) for i in result.scalars().all()]
+        return [InsightResponse.model_validate(i) for i in insights]
 
     async def dismiss(self, insight_id: int, user_id: int) -> InsightResponse:
         """Mark an insight the user owns as dismissed."""

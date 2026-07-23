@@ -2,9 +2,9 @@
 Auth service — register, login, logout, token refresh.
 """
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,7 +17,7 @@ from app.core import (
     hash_password,
     verify_password,
 )
-from app.db.models import RefreshToken, User
+from app.repositories import AuthRepository
 from app.schemas import (
     AuthResponse,
     LoginRequest,
@@ -32,26 +32,23 @@ class AuthService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = AuthRepository(db)
 
     async def register(self, payload: RegisterRequest) -> AuthResponse:
         """Create a new user account and issue an initial token pair."""
-        # Check uniqueness
-        existing = await self.db.execute(
-            select(User).where(
-                (User.email == payload.email) | (User.username == payload.username)
-            )
+        existing = await self.repo.get_by_username_or_email(
+            payload.username, payload.email
         )
-        if existing.scalar_one_or_none():
+        if existing:
             raise ConflictError("Username or email already registered.")
 
-        user = User(
+        user = self.repo.create_user(
             username=payload.username,
             email=payload.email,
             password_hash=hash_password(payload.password),
             first_name=payload.first_name,
             last_name=payload.last_name,
         )
-        self.db.add(user)
         await self.db.flush()  # get user.id before commit
 
         access_token = create_access_token(user.id)
@@ -69,12 +66,7 @@ class AuthService:
 
     async def login(self, payload: LoginRequest) -> AuthResponse:
         """Verify credentials and issue a new access/refresh token pair."""
-        result = await self.db.execute(
-            select(User).where(
-                User.username == payload.username, User.is_active.is_(True)
-            )
-        )
-        user = result.scalar_one_or_none()
+        user = await self.repo.get_active_by_username(payload.username)
 
         if not user or not verify_password(payload.password, user.password_hash):
             raise UnauthorizedError("Invalid username or password.")
@@ -106,17 +98,8 @@ class AuthService:
             raise UnauthorizedError("Invalid or expired refresh token.") from e
 
         # Verify token is stored and not revoked
-        import hashlib
-
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-        result = await self.db.execute(
-            select(RefreshToken).where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked_at.is_(None),
-            )
-        )
-        stored = result.scalar_one_or_none()
+        stored = await self.repo.get_valid_refresh_token(token_hash)
         if not stored or not stored.is_valid:
             raise UnauthorizedError("Refresh token is invalid or expired.")
 
@@ -129,23 +112,14 @@ class AuthService:
 
     async def logout(self, user_id: int) -> None:
         """Revoke all refresh tokens for this user."""
-        result = await self.db.execute(
-            select(RefreshToken).where(
-                RefreshToken.user_id == user_id,
-                RefreshToken.revoked_at.is_(None),
-            )
-        )
-        for token in result.scalars().all():
+        for token in await self.repo.get_active_refresh_tokens(user_id):
             token.revoked_at = datetime.now(timezone.utc)
         await self.db.commit()
 
     async def _store_refresh_token(self, user_id: int, token: str) -> None:
         """Persist the hash (never the raw token) of an issued refresh token."""
-        import hashlib
-
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=settings.refresh_token_expire_days
         )
-        rt = RefreshToken(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
-        self.db.add(rt)
+        self.repo.store_refresh_token(user_id, token_hash, expires_at)

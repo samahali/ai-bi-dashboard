@@ -11,6 +11,7 @@ from app.config import settings
 from app.core import NotFoundError
 from app.db.models import Dataset, Insight, Query, Report
 from app.db.session import AsyncSessionLocal
+from app.repositories import ReportRepository
 from app.schemas import ReportCreate, ReportResponse, ReportStatusResponse
 from app.utils import get_owned, track
 
@@ -20,6 +21,7 @@ class ReportService:
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self.repo = ReportRepository(db)
 
     async def create_report(
         self, payload: ReportCreate, user_id: int
@@ -34,7 +36,7 @@ class ReportService:
             not_found_msg="Dataset not found.",
         )
 
-        report = Report(
+        report = self.repo.create(
             user_id=user_id,
             dataset_id=payload.dataset_id,
             title=payload.title,
@@ -43,7 +45,6 @@ class ReportService:
             visualization_ids=payload.visualization_ids,
             status="pending",
         )
-        self.db.add(report)
         await self.db.commit()
         await self.db.refresh(report)
 
@@ -71,12 +72,8 @@ class ReportService:
 
     async def list_reports(self, user_id: int) -> list[ReportResponse]:
         """List all reports owned by the user, newest first."""
-        result = await self.db.execute(
-            select(Report)
-            .where(Report.user_id == user_id)
-            .order_by(Report.created_at.desc())
-        )
-        return [ReportResponse.model_validate(r) for r in result.scalars().all()]
+        reports = await self.repo.list_for_user(user_id)
+        return [ReportResponse.model_validate(r) for r in reports]
 
     async def delete_report(self, report_id: int, user_id: int) -> None:
         """Delete a report the user owns and its PDF file, if any."""
