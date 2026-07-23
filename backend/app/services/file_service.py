@@ -91,7 +91,6 @@ class FileService:
             is_public=is_public,
             status="processing",
         )
-        self.db.add(dataset)
         await self.db.commit()
         await self.db.refresh(dataset)
 
