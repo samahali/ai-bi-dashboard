@@ -1,5 +1,6 @@
-import { api } from './api'
 import type { AuthResponse, User } from '@/types'
+
+import { api } from './api'
 
 export const authService = {
   async register(payload: {

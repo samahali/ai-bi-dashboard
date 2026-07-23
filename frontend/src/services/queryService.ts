@@ -1,5 +1,6 @@
-import { api } from './api'
 import type { Query } from '@/types'
+
+import { api } from './api'
 
 export const queryService = {
   async create(payload: {

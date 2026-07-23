@@ -1,5 +1,6 @@
-import { api } from './api'
 import type { Report } from '@/types'
+
+import { api } from './api'
 
 export const reportService = {
   async create(payload: {

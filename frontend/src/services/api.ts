@@ -1,5 +1,6 @@
 import axios, { type AxiosError } from 'axios'
 import toast from 'react-hot-toast'
+
 import { useAuthStore } from '@/store/auth.store'
 
 export const api = axios.create({

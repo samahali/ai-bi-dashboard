@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+
 import type { User } from '@/types'
 
 // Tokens are NOT stored here or in localStorage — they live in httpOnly

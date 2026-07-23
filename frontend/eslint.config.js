@@ -5,6 +5,7 @@
 import js from '@eslint/js'
 import tseslint from '@typescript-eslint/eslint-plugin'
 import tsParser from '@typescript-eslint/parser'
+import importPlugin from 'eslint-plugin-import'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
@@ -27,6 +28,7 @@ export default [
     },
     plugins: {
       '@typescript-eslint': tseslint,
+      import: importPlugin,
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
     },
@@ -45,6 +47,38 @@ export default [
         'warn',
         { allowConstantExport: true },
       ],
+      // React, then third-party, then internal (@/ alias), then relative,
+      // then styles — one blank line between groups, per frontend-rules.md.
+      'import/order': [
+        'warn',
+        {
+          groups: [
+            'builtin',
+            'external',
+            'internal',
+            ['parent', 'sibling', 'index'],
+            'object',
+            'type',
+          ],
+          pathGroups: [
+            { pattern: 'react', group: 'builtin', position: 'before' },
+            { pattern: '@/**', group: 'internal' },
+            { pattern: '**/*.css', group: 'index', position: 'after' },
+          ],
+          pathGroupsExcludedImportTypes: ['react'],
+          'newlines-between': 'always',
+        },
+      ],
+    },
+    settings: {
+      // Plain node resolver: import/order only needs to classify each
+      // import path into a group via `pathGroups` below, not fully resolve
+      // the module — no need for eslint-import-resolver-typescript, whose
+      // peer deps (@typescript-eslint/utils ^8.x) conflict with this
+      // project's pinned @typescript-eslint ^7.x line.
+      'import/resolver': {
+        node: { extensions: ['.js', '.jsx', '.ts', '.tsx'] },
+      },
     },
   },
 ]

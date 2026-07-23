@@ -1,7 +1,9 @@
 import React, { Suspense, lazy } from 'react'
+
 import ReactDOM from 'react-dom/client'
 import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import toast, { Toaster } from 'react-hot-toast'
+
 import App from './App'
 import './index.css'
 

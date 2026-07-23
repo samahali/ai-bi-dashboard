@@ -1,5 +1,6 @@
-import { api } from './api'
 import type { Insight } from '@/types'
+
+import { api } from './api'
 
 export const insightService = {
   async list(

@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { UserPlus, BrainCircuit } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { AxiosError } from 'axios'
+
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/store/auth.store'
 import Button from '@/components/ui/Button'

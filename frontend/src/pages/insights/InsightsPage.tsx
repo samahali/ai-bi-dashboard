@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Lightbulb, X, AlertTriangle, TrendingUp, AlertCircle } from 'lucide-react'
+
 import { insightService } from '@/services/insightService'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'

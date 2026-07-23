@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
+
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+
 import { useAuthStore } from '@/store/auth.store'
 import { authService } from '@/services/authService'
 import AppLayout from '@/components/common/AppLayout'

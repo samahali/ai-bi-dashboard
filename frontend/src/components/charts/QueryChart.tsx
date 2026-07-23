@@ -2,6 +2,7 @@ import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, ScatterChart, Scatter,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from 'recharts'
+
 import { resolveChartType } from '@/utils/helpers'
 
 const COLORS = ['#3b82d4', '#7c5cd8', '#16a34a', '#d97706', '#dc2626', '#0891b2']

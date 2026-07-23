@@ -1,5 +1,6 @@
-import { api } from './api'
 import type { Dataset, DatasetPreview, PaginatedDatasets } from '@/types'
+
+import { api } from './api'
 
 export const datasetService = {
   async list(params?: { page?: number; limit?: number; search?: string }): Promise<PaginatedDatasets> {
