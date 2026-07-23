@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react'
 import ReactDOM from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'react-hot-toast'
+import { QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import toast, { Toaster } from 'react-hot-toast'
 import App from './App'
 import './index.css'
 
@@ -22,6 +22,18 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 60, // 1 minute
     },
   },
+  // Centralized read-path error feedback: a failed useQuery previously left
+  // `data` undefined with no UI signal at all. One shared handler covers
+  // every query without threading an onError into each call site. Toasts
+  // are keyed by query key so a polling/refetch loop retrying the same
+  // failing query doesn't spam duplicate toasts on every interval.
+  queryCache: new QueryCache({
+    onError: (_error, query) => {
+      toast.error('Failed to load data. Please try again.', {
+        id: JSON.stringify(query.queryKey),
+      })
+    },
+  }),
 })
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
