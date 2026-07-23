@@ -83,12 +83,7 @@ class FileParser:
                     db, dataset_id, dataset.user_id, dataframes_by_table
                 )
 
-                # Deep import (not `from app.ai import SchemaRAGStore`): app.ai's
-                # __init__ imports agent.py, which imports app.ai.sql_executor,
-                # which imports app.utils (this package) — importing the app.ai
-                # package from inside app.utils.__init__'s import of this module
-                # would re-enter app.utils.__init__ before it finishes, a real cycle.
-                from app.ai.rag_store import SchemaRAGStore
+                from app.rag import SchemaRAGStore
 
                 SchemaRAGStore().index_dataset_schema(dataset_id, tables_metadata)
 

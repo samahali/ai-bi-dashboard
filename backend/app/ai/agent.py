@@ -13,13 +13,13 @@ from typing import Any
 
 import structlog
 
-from app.ai.prompts import build_repair_prompt, build_text_to_sql_prompt
-from app.ai.rag_store import SchemaRAGStore
 from app.ai.sql_executor import DatasetSQLExecutor
 from app.ai.validators import PromptInjectionValidator
 from app.config import settings
 from app.core import AIServiceError, PromptInjectionError
 from app.db.models import Dataset
+from app.prompts import build_repair_prompt, build_text_to_sql_prompt
+from app.rag import SchemaRAGStore
 from app.utils import effective_tables_metadata
 
 logger = structlog.get_logger(__name__)

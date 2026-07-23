@@ -114,7 +114,7 @@ class DatasetService:
         dataset.deleted_at = datetime.now(timezone.utc)
         await self.db.commit()
 
-        from app.ai import SchemaRAGStore
+        from app.rag import SchemaRAGStore
 
         SchemaRAGStore().delete_dataset_schema(dataset_id)
 
