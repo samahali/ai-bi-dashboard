@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 
 import { Outlet, useLocation } from 'react-router-dom'
 
-import Sidebar from './Sidebar'
-import Header from './Header'
+import Header from '@/components/common/Header'
+import Sidebar from '@/components/common/Sidebar'
 
 export default function AppLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
