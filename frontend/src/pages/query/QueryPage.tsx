@@ -134,6 +134,7 @@ export default function QueryPage() {
                 onChange={(e) => setQuestion(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask anything about your data… e.g. 'What are the top 5 products by sales?'"
+                aria-label="Ask a question about your data"
                 rows={3}
                 className="flex-1 resize-none text-sm outline-none placeholder:text-muted text-[#1f2328] bg-transparent"
               />

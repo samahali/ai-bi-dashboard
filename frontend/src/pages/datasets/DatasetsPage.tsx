@@ -40,6 +40,7 @@ export default function DatasetsPage() {
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             placeholder="Search datasets…"
+            aria-label="Search datasets"
             className="w-full pl-8 pr-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent"
           />
         </div>
